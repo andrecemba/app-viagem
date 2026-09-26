@@ -1,0 +1,152 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --radius: 1rem;
+  --background: oklch(0.985 0.008 75);
+  --foreground: oklch(0.24 0.02 45);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.24 0.02 45);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.24 0.02 45);
+  --primary: oklch(0.62 0.17 45);
+  --primary-foreground: oklch(0.99 0.005 75);
+  --secondary: oklch(0.955 0.02 70);
+  --secondary-foreground: oklch(0.3 0.03 45);
+  --muted: oklch(0.955 0.012 70);
+  --muted-foreground: oklch(0.5 0.025 50);
+  --accent: oklch(0.93 0.045 60);
+  --accent-foreground: oklch(0.32 0.06 40);
+  --destructive: oklch(0.58 0.22 27);
+  --success: oklch(0.55 0.13 150);
+  --success-soft: oklch(0.94 0.05 150);
+  --warning-soft: oklch(0.95 0.06 85);
+  --warning-foreground: oklch(0.42 0.09 70);
+  --border: oklch(0.9 0.015 65);
+  --input: oklch(0.88 0.018 65);
+  --ring: oklch(0.62 0.17 45);
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-4: #eda100;
+  --series-5: #e87ba4;
+  --series-6: #008300;
+  --series-7: #4a3aa7;
+  --series-8: #e34948;
+}
+
+.dark {
+  --background: oklch(0.2 0.012 50);
+  --foreground: oklch(0.95 0.01 70);
+  --card: oklch(0.245 0.014 50);
+  --card-foreground: oklch(0.95 0.01 70);
+  --popover: oklch(0.245 0.014 50);
+  --popover-foreground: oklch(0.95 0.01 70);
+  --primary: oklch(0.72 0.15 50);
+  --primary-foreground: oklch(0.2 0.02 45);
+  --secondary: oklch(0.3 0.016 50);
+  --secondary-foreground: oklch(0.93 0.01 70);
+  --muted: oklch(0.29 0.014 50);
+  --muted-foreground: oklch(0.72 0.02 60);
+  --accent: oklch(0.34 0.04 50);
+  --accent-foreground: oklch(0.95 0.02 70);
+  --destructive: oklch(0.68 0.19 25);
+  --success: oklch(0.74 0.14 150);
+  --success-soft: oklch(0.32 0.05 150);
+  --warning-soft: oklch(0.33 0.05 80);
+  --warning-foreground: oklch(0.88 0.1 85);
+  --border: oklch(0.34 0.016 50);
+  --input: oklch(0.38 0.018 50);
+  --ring: oklch(0.72 0.15 50);
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-4: #c98500;
+  --series-5: #d55181;
+  --series-6: #008300;
+  --series-7: #9085e9;
+  --series-8: #e66767;
+}
+
+@theme inline {
+  --font-sans: var(--font-inter);
+  --font-display: var(--font-nunito);
+  --radius-sm: calc(var(--radius) - 6px);
+  --radius-md: calc(var(--radius) - 4px);
+  --radius-lg: calc(var(--radius) - 2px);
+  --radius-xl: var(--radius);
+  --radius-2xl: calc(var(--radius) + 4px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning-soft: var(--warning-soft);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    scroll-behavior: smooth;
+  }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+  h1, h2, h3, h4 {
+    @apply font-display tracking-tight;
+  }
+}
+
+@utility scrollbar-none {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slide-in {
+  from { opacity: 0.4; transform: translateX(24px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+/* Tipografia das páginas institucionais. */
+.prose-content h2 {
+  @apply mt-10 text-xl font-extrabold;
+}
+.prose-content p,
+.prose-content li {
+  @apply text-muted-foreground;
+}
+.prose-content strong {
+  @apply text-foreground;
+}
+.prose-content ul {
+  @apply list-disc space-y-2 pl-5;
+}
+.prose-content a {
+  @apply font-semibold text-primary underline-offset-4 hover:underline;
+}
