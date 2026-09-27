@@ -6,6 +6,7 @@ import { ArrowUpRight, ChevronRight, HelpCircle, Stethoscope, Truck } from "luci
 import { BrandSwatch } from "@/components/comparator/brand-swatch";
 import { PackagePhoto } from "@/components/comparator/package-photo";
 import { PriceSignalTag } from "@/components/comparator/price-signal";
+import { TopicGrid } from "@/components/comparator/topic-icons";
 import { TrackView } from "@/components/comparator/track-view";
 import { StoreLogo } from "@/components/icons/store-logo";
 import { siteConfig } from "@/config/site";
@@ -52,7 +53,7 @@ export default async function ProductPage({ params }: PageProps<"/produto/[slug]
   const now = demo ? MOCK_NOW : new Date();
 
   const unit = unitPriceOf(item);
-  const topics = itemTopics(item);
+  const topics = itemTopics(item).filter((t) => t.key !== "veterinario");
   const sizes = items.filter((i) => i.family === item.family).sort((a, b) => a.netWeightGrams - b.netWeightGrams);
   const available = item.offers.filter((o) => o.inStock);
   const unavailable = item.offers.filter((o) => !o.inStock);
@@ -85,18 +86,29 @@ export default async function ProductPage({ params }: PageProps<"/produto/[slug]
         </Link>
       </nav>
 
-      <div className="grid gap-6 md:grid-cols-[minmax(0,300px)_1fr] lg:gap-10">
-        <PackagePhoto item={item} className="mx-auto aspect-square w-full max-w-[18rem] md:max-w-none" />
-        <div>
+      <div className="grid gap-6 md:grid-cols-[minmax(0,240px)_1fr] lg:grid-cols-[220px_minmax(0,1fr)_300px] lg:gap-8">
+        <div className="md:row-span-2 lg:row-span-1">
+          <PackagePhoto item={item} className="mx-auto aspect-square w-full max-w-[11rem] md:max-w-none" />
+        </div>
+        <div className="min-w-0">
           <p className="flex items-center gap-2 text-sm font-semibold text-muted-foreground">
             <BrandSwatch brand={item.brand} size={26} /> {item.brand.name}
             {item.lineName && item.lineName !== item.brand.name && <span className="font-medium">· {item.lineName}</span>}
           </p>
-          <h1 className="mt-2 font-display text-2xl leading-tight font-bold text-balance sm:text-3xl">
+          <h1 className="mt-2 font-display text-2xl leading-tight font-bold text-balance sm:text-[1.75rem]">
             {fullName(item)} <span className="whitespace-nowrap text-muted-foreground">· {packageLabel(item)}</span>
           </h1>
-
-          <div className="mt-5 rounded-lg border bg-card p-4 sm:p-5">
+          {item.kind === "medicamentosa" && (
+            <p className="mt-3 flex items-start gap-2 rounded-md border px-3 py-2 text-sm">
+              <Stethoscope className="mt-0.5 size-4 shrink-0" aria-hidden /> Alimento de uso veterinário{item.vetNote ? ` (${item.vetNote})` : ""}: só troque ou compre com orientação do seu veterinário.
+            </p>
+          )}
+          <h2 className="sr-only">Ficha da embalagem</h2>
+          <TopicGrid topics={topics} item={item} className="mt-5" />
+          {item.description && <p className="mt-4 text-sm leading-relaxed whitespace-pre-line text-foreground/90">{item.description}</p>}
+        </div>
+        <div className="space-y-5 md:col-start-2 lg:col-start-auto">
+          <div className="rounded-lg border bg-card p-4 sm:p-5">
             {item.bestPrice != null ? (
               <>
                 <p className="text-sm text-muted-foreground">Menor preço em {storeCountLabel(item.storeCount)}</p>
@@ -125,7 +137,7 @@ export default async function ProductPage({ params }: PageProps<"/produto/[slug]
           </div>
 
           {sizes.length > 1 && (
-            <div className="mt-5">
+            <div>
               <p className="text-sm font-semibold">Outros tamanhos desta ração</p>
               <ul className="mt-2 flex flex-wrap gap-2">
                 {sizes.map((s) => {
@@ -222,32 +234,6 @@ export default async function ProductPage({ params }: PageProps<"/produto/[slug]
         </p>
       </Section>
 
-      <Section id="ficha" title="Confira se é a ração certa" subtitle="Compare estes dados com a embalagem que você usa antes de comprar.">
-        {item.kind === "medicamentosa" && (
-          <p className="mb-3 flex items-start gap-2 rounded-md border px-3 py-2 text-sm">
-            <Stethoscope className="mt-0.5 size-4 shrink-0" aria-hidden /> Alimento de uso veterinário: só troque ou compre com orientação do seu veterinário.
-          </p>
-        )}
-        <dl className="divide-y rounded-lg border">
-          <Row label="Marca">
-            {item.brand.name}
-            {item.lineName && item.lineName !== item.brand.name && ` · ${item.lineName}`}
-          </Row>
-          <Row label="Fórmula">{item.title}</Row>
-          {topics.map((t) => (
-            <Row key={t.key} label={t.label}>
-              {t.value ?? <span className="text-muted-foreground">Não informado</span>}
-            </Row>
-          ))}
-        </dl>
-        {item.description && (
-          <div className="mt-4 rounded-lg border p-4">
-            <h3 className="font-semibold">Descrição</h3>
-            <p className="mt-1.5 text-sm leading-relaxed whitespace-pre-line text-foreground/90">{item.description}</p>
-          </div>
-        )}
-      </Section>
-
       {sameFormula.length > 0 && (
         <Section id="sabores" title="Mesma fórmula, outros sabores">
           <OtherGrid items={sameFormula} items_all={items} />
@@ -258,15 +244,6 @@ export default async function ProductPage({ params }: PageProps<"/produto/[slug]
           <OtherGrid items={sameBrand} items_all={items} />
         </Section>
       )}
-    </div>
-  );
-}
-
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="grid grid-cols-[8.5rem_1fr] gap-3 px-4 py-2.5 text-sm sm:grid-cols-[11rem_1fr]">
-      <dt className="text-muted-foreground">{label}</dt>
-      <dd className="min-w-0">{children}</dd>
     </div>
   );
 }

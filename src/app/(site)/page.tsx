@@ -1,4 +1,7 @@
 import { Comparator } from "@/components/comparator/comparator";
+import { TopDeals } from "@/components/comparator/top-deals";
+import { getTopDeals } from "@/lib/analytics/top-deals";
+import { MOCK_NOW } from "@/data/mock/random";
 import { REGION_LABEL } from "@/config/comparator";
 import { readUrlState } from "@/lib/comparator/filters";
 import type { ComparatorBrand } from "@/lib/comparator/types";
@@ -8,6 +11,7 @@ export default async function HomePage({ searchParams }: PageProps<"/">) {
   const [items, params] = await Promise.all([getCatalog(), searchParams]);
   const brands = [...new Map<string, ComparatorBrand>(items.map((i) => [i.brand.slug, i.brand])).values()].sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
   const demo = catalogSource() === "exemplo";
+  const top = await getTopDeals(items, demo ? MOCK_NOW : new Date());
 
   return (
     <>
@@ -15,6 +19,7 @@ export default async function HomePage({ searchParams }: PageProps<"/">) {
         items={items}
         brands={brands}
         initial={readUrlState(params)}
+        aside={<TopDeals deals={top.deals} basedOnDemand={top.basedOnDemand} />}
         intro={
           <>
             <p className="text-sm font-medium text-muted-foreground">Comparador de rações · {REGION_LABEL}</p>

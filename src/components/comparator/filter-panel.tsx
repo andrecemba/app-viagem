@@ -220,16 +220,14 @@ function BrandFilter({
                 disabled={disabled}
                 onClick={() => onToggle(b.slug)}
                 className={cn(
-                  "flex h-full w-full items-center gap-2 rounded-md border px-2 py-1.5 text-left transition-colors",
+                  "flex h-full w-full items-center gap-1.5 rounded-md border px-1.5 py-1 text-left transition-colors",
                   selected ? "border-foreground bg-foreground/[0.04] ring-1 ring-foreground" : "hover:border-foreground/40",
                   disabled && "opacity-35 hover:border-border",
                 )}
               >
-                <BrandSwatch brand={b} size={26} />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[0.8125rem] leading-tight font-medium">{b.name}</span>
-                  <span className="text-[0.6875rem] text-muted-foreground tabular-nums">{count}</span>
-                </span>
+                <BrandSwatch brand={b} size={22} />
+                <span className="min-w-0 flex-1 truncate text-[0.8125rem] leading-tight font-medium">{b.name}</span>
+                <span className="text-[0.6875rem] text-muted-foreground tabular-nums">{count}</span>
               </button>
             </li>
           );
