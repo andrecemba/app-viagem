@@ -25,10 +25,9 @@ export default async function ProductsPage({ searchParams }: PageProps<"/admin/p
   const [db, sp] = await Promise.all([adminRepo.read(), searchParams]);
   const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
   const { filters, sort, dir } = readProductFilters(sp);
-  const storeNames = Object.fromEntries(db.stores.map((s) => [s.id, s.name]));
 
-  const all = buildRows(db);
-  const facets = computeFacets(all, filters, storeNames);
+  const all = buildRows(db.products);
+  const facets = computeFacets(all, filters);
   const rows = sortRows(all.filter((r) => matchesFilters(r, filters)), sort, dir);
   const appliedCount = FILTER_DIMENSIONS.reduce((n, d) => n + (filters[d]?.length ?? 0), 0) + (filters.q ? 1 : 0);
   const returnTo = productFiltersHref(filters, sort, dir);
@@ -51,7 +50,7 @@ export default async function ProductsPage({ searchParams }: PageProps<"/admin/p
     <div className="space-y-4">
       <PageHeader
         title="Produtos"
-        description="Cada ficha é uma embalagem exata. Outro sabor ou outro peso é outra ficha."
+        description="Cada ficha é uma embalagem exata (outro sabor ou peso = outra ficha). Os tópicos da ficha são os mesmos que o cliente vê no site."
         actions={
           <Link href="/admin/produtos/novo" className={btn.primary}>
             Cadastrar ração
@@ -87,7 +86,7 @@ export default async function ProductsPage({ searchParams }: PageProps<"/admin/p
               <label htmlFor="busca-produtos" className="sr-only">
                 Buscar produtos
               </label>
-              <input id="busca-produtos" name="q" defaultValue={filters.q ?? ""} placeholder="Buscar por marca, fórmula, sabor ou código" className={input + " max-w-md"} />
+              <input id="busca-produtos" name="q" defaultValue={filters.q ?? ""} placeholder="Buscar por marca, fórmula ou sabor" className={input + " max-w-md"} />
               <button className={btn.secondary} type="submit">
                 Buscar
               </button>
@@ -102,7 +101,7 @@ export default async function ProductsPage({ searchParams }: PageProps<"/admin/p
             <ProductsTable
               rows={rows}
               returnTo={returnTo}
-              sortHeader={{ nome: sortHeader("nome", "Produto"), peso: sortHeader("peso", "Peso"), alertas: sortHeader("alertas", "Alertas") }}
+              sortHeader={{ nome: sortHeader("nome", "Produto"), peso: sortHeader("peso", "Peso"), atualizado: sortHeader("atualizado", "Atualizado") }}
             />
           ) : (
             <EmptyState title={all.length ? "Nenhum produto com esses filtros." : "Nenhum produto cadastrado."}>

@@ -1,7 +1,7 @@
 import Link from "next/link";
 
-import { SEVERITY_LABEL, STATUS_LABEL, VERIFICATION_LABEL } from "@/lib/admin/labels";
-import type { AlertSeverity, PublicationStatus, Verification } from "@/lib/admin/types";
+import { STATUS_LABEL } from "@/lib/admin/labels";
+import type { PublicationStatus } from "@/lib/admin/types";
 import { cn } from "@/lib/utils";
 
 /** Peças visuais compartilhadas pelas telas administrativas. */
@@ -30,17 +30,6 @@ export function Flash({ aviso, erro }: { aviso?: string; erro?: string }) {
 
 const badgeBase = "inline-flex items-center gap-1 whitespace-nowrap rounded px-1.5 py-0.5 text-[0.6875rem] font-semibold leading-4";
 
-const SEVERITY_CLASS: Record<AlertSeverity, string> = {
-  critica: "bg-red-600 text-white",
-  alta: "bg-orange-100 text-orange-900 ring-1 ring-orange-300 dark:bg-orange-950 dark:text-orange-100 dark:ring-orange-800",
-  media: "bg-amber-50 text-amber-900 ring-1 ring-amber-300 dark:bg-amber-950 dark:text-amber-100 dark:ring-amber-800",
-  baixa: "bg-muted text-muted-foreground ring-1 ring-border",
-};
-
-export function SeverityBadge({ severity }: { severity: AlertSeverity }) {
-  return <span className={cn(badgeBase, SEVERITY_CLASS[severity])}>{SEVERITY_LABEL[severity]}</span>;
-}
-
 const STATUS_CLASS: Record<PublicationStatus, string> = {
   publicado: "bg-emerald-50 text-emerald-900 ring-1 ring-emerald-300 dark:bg-emerald-950 dark:text-emerald-100 dark:ring-emerald-800",
   rascunho: "bg-muted text-foreground/80 ring-1 ring-border",
@@ -49,28 +38,6 @@ const STATUS_CLASS: Record<PublicationStatus, string> = {
 
 export function StatusBadge({ status }: { status: PublicationStatus }) {
   return <span className={cn(badgeBase, STATUS_CLASS[status])}>{STATUS_LABEL[status]}</span>;
-}
-
-export function VerificationBadge({ verification, compact = false }: { verification: Verification; compact?: boolean }) {
-  const cls =
-    verification === "verificado"
-      ? "text-emerald-800 dark:text-emerald-300"
-      : verification === "pendente"
-        ? "text-amber-800 dark:text-amber-300"
-        : "text-muted-foreground";
-  const label = compact
-    ? verification === "verificado"
-      ? "Verificado"
-      : verification === "pendente"
-        ? "Pendente"
-        : "Fonte localizada"
-    : VERIFICATION_LABEL[verification];
-  return (
-    <span className={cn("inline-flex items-center gap-1 text-[0.6875rem] font-medium", cls)}>
-      <span aria-hidden className={cn("size-1.5 rounded-full", verification === "verificado" ? "bg-emerald-600" : verification === "pendente" ? "bg-amber-500" : "bg-muted-foreground/50")} />
-      {label}
-    </span>
-  );
 }
 
 export function DemoBadge() {

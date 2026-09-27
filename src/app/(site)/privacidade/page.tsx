@@ -9,7 +9,7 @@ export default function PrivacyPage() {
     <InstitutionalPage title="Política de Privacidade" intro="Como tratamos dados pessoais, conforme a LGPD (Lei 13.709/2018)." draft>
       <h2>Dados que coletamos</h2>
       <ul>
-        <li><strong>Cliques em ofertas:</strong> registramos a oferta, a loja e a data/hora, sem dados pessoais.</li>
+        <li><strong>Uso do site:</strong> termos buscados, filtros escolhidos, rações visitadas e cliques em “Ir à loja” (oferta, loja, preço e data/hora). Não guardamos IP, cookie nem identificação do visitante, e descartamos buscas que pareçam conter e-mail, telefone ou documento.</li>
         <li><strong>Formulário de contato:</strong> nome, e-mail e mensagem, apenas para responder você.</li>
         <li><strong>Cookies:</strong> apenas os necessários; outros só com o seu consentimento (veja a Política de Cookies).</li>
       </ul>

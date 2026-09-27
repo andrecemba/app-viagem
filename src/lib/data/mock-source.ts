@@ -9,7 +9,8 @@ import {
 } from "@/lib/affiliate";
 import { NATURAL_BRANDS } from "@/config/comparator";
 import { PACKAGE_RANGES } from "@/config/taxonomy";
-import type { ComparatorItem, ComparatorOffer, FoodKind } from "@/lib/comparator/types";
+import { FILTER_SIZES, type Need } from "@/lib/catalog/vocab";
+import type { ComparatorItem, FoodKind } from "@/lib/comparator/types";
 import { formatWeight } from "@/lib/format";
 import type { FunnelDimension, FunnelSelection, OfferFilters } from "@/lib/funnel/filters";
 import { computeOfferBadges } from "@/lib/pricing/badges";
@@ -22,6 +23,7 @@ import { complementaryProducts, complementaryRules, complementCategoryLabels } f
 import { offers, priceHistory } from "@/data/mock/offers";
 import { products } from "@/data/mock/products";
 import { stores } from "@/data/mock/stores";
+import { MOCK_NOW } from "@/data/mock/random";
 import type { Offer, Product, Store } from "@/types/catalog";
 
 import type {
@@ -155,12 +157,6 @@ function relatedFor(product: Product, storeId?: string, sameStoreOnly = false, l
   }));
 }
 
-const STORE_KIND: Record<Store["type"], ComparatorOffer["storeKind"]> = {
-  marketplace: "Marketplace",
-  pet_store: "Pet shop",
-  supermarket: "Supermercado",
-};
-
 function kindOf(product: Product): FoodKind | null {
   if (product.foodType === "petiscos") return null;
   if (product.foodType === "dietas-veterinarias") return "medicamentosa";
@@ -174,6 +170,28 @@ function titleOf(product: Product) {
   return product.unitCount == null && product.name.endsWith(suffix) ? product.name.slice(0, -suffix.length) : product.name;
 }
 
+const REFINEMENT_NEED: Record<Product["refinements"][number], Need> = {
+  "sem-corante": "sem_corantes",
+  "grain-free": "sem_graos",
+  light: "controle_peso",
+  "pele-sensivel": "pele_sensivel",
+};
+
+/** Média do menor preço do dia nos últimos 30 dias (histórico ilustrativo). */
+function averageBestPrice(productOffers: Offer[]): number | null {
+  const since = new Date(MOCK_NOW.getTime() - 30 * 86400_000).toISOString().slice(0, 10);
+  const minByDay = new Map<string, number>();
+  for (const o of productOffers) {
+    for (const point of historyByOffer.get(o.id) ?? []) {
+      if (point.date < since) continue;
+      minByDay.set(point.date, Math.min(minByDay.get(point.date) ?? Infinity, point.price));
+    }
+  }
+  if (minByDay.size < 5) return null;
+  const values = [...minByDay.values()];
+  return Math.round((values.reduce((a, b) => a + b, 0) / values.length) * 100) / 100;
+}
+
 function comparatorItemFor(product: Product): ComparatorItem | null {
   const kind = kindOf(product);
   const productOffers = offersByProduct.get(product.id) ?? [];
@@ -182,30 +200,37 @@ function comparatorItemFor(product: Product): ComparatorItem | null {
   const sorted = [...productOffers].sort((a, b) => Number(b.inStock) - Number(a.inStock) || a.price - b.price);
   const available = sorted.filter((o) => o.inStock);
   if (!available.length) return null;
+  const stages = product.lifeStages.filter((s): s is Exclude<typeof s, "castrado"> => s !== "castrado");
+  const needs: Need[] = product.refinements.map((r) => REFINEMENT_NEED[r]);
+  if (product.lifeStages.includes("castrado")) needs.unshift("castrados");
   return {
     id: product.id,
     slug: product.slug,
     family: product.variantGroup,
-    brand: { slug: brand.slug, name: brand.name, color: brand.color, initials: brand.initials },
+    brand: { slug: brand.slug, name: brand.name, color: brand.color, initials: brand.initials, logo: brand.logoUrl },
     lineName: lineById.get(product.lineId)?.name ?? "",
     title: titleOf(product),
     species: product.species,
     kind,
-    format: product.format,
-    lifeStages: product.lifeStages,
-    sizes: product.sizes,
+    // Dados de exemplo: produtos só "castrados" são de gatos/cães adultos.
+    lifeStages: stages.length ? stages : ["adulto"],
+    sizes: product.species === "caes" ? (product.sizes.length ? product.sizes : [...FILTER_SIZES]) : null,
+    needs,
     flavor: product.flavor,
     netWeightGrams: product.netWeightGrams,
     unitCount: product.unitCount,
+    kibbleSize: null,
+    vetNote: kind === "medicamentosa" ? "Dieta terapêutica" : null,
+    gtin: product.ean,
+    description: null,
     // Nenhuma foto oficial verificada nos dados de exemplo.
     photoUrl: null,
     offers: sorted.map((o) => {
       const store = storeById.get(o.storeId)!;
       return {
         id: o.id,
+        storeSlug: store.slug,
         storeName: store.name,
-        storeColor: store.color,
-        storeKind: STORE_KIND[store.type],
         sellerName: o.sellerName,
         price: o.price,
         pixPrice: o.pixPrice,
@@ -216,6 +241,7 @@ function comparatorItemFor(product: Product): ComparatorItem | null {
     }),
     bestPrice: available[0].price,
     storeCount: available.length,
+    avgPrice30d: averageBestPrice(productOffers),
   };
 }
 

@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it, vi } from "vitest";
 
-import { facetCounts, matchesFilters, readUrlState, writeUrlState } from "@/lib/comparator/filters";
+import { EMPTY_FILTERS, facetCounts, groupByFamily, matchesFilters, priceSignal, readUrlState, writeUrlState } from "@/lib/comparator/filters";
 import { buildSearchIndex, editDistance, parseQuery, searchItems, type SearchIndex } from "@/lib/comparator/search";
 import type { ComparatorItem } from "@/lib/comparator/types";
 
@@ -10,8 +10,8 @@ let items: ComparatorItem[];
 let index: SearchIndex;
 
 beforeAll(async () => {
-  const { getComparatorItems } = await import("@/lib/data");
-  items = await getComparatorItems();
+  const { getCatalog } = await import("@/lib/data");
+  items = await getCatalog();
   index = buildSearchIndex(items);
 });
 
@@ -64,7 +64,7 @@ describe("searchItems", () => {
   it("busca por tipo: ração gato castrado", () => {
     const r = searchItems(index, "ração gato castrado");
     expect(r.mode).toBe("exact");
-    expect(r.items.every((i) => i.species === "gatos" && i.lifeStages.includes("castrado"))).toBe(true);
+    expect(r.items.every((i) => i.species === "gatos" && i.needs.includes("castrados"))).toBe(true);
   });
 
   it("tolera erros de digitação e informa a correção", () => {
@@ -110,28 +110,67 @@ describe("searchItems", () => {
 });
 
 describe("filtros", () => {
-  it("combina espécie, tipo e peso", () => {
-    const f = { species: "gatos" as const, kind: "seca" as const, weight: 10100 };
-    const list = items.filter((i) => matchesFilters(i, f));
+  const f = (patch: Partial<typeof EMPTY_FILTERS> & { species?: "caes" | "gatos" }) => ({ ...EMPTY_FILTERS, ...patch });
+
+  it("combina espécie, tipo e faixa de peso", () => {
+    const list = items.filter((i) => matchesFilters(i, f({ species: "gatos", kind: ["seca"], weight: ["10-15kg"] })));
     expect(list.length).toBeGreaterThan(0);
-    expect(list.every((i) => i.species === "gatos" && i.kind === "seca" && i.netWeightGrams === 10100)).toBe(true);
+    expect(list.every((i) => i.species === "gatos" && i.kind === "seca" && i.netWeightGrams > 10000 && i.netWeightGrams <= 15000)).toBe(true);
+  });
+
+  it("várias marcas no mesmo filtro somam (OU); grupos diferentes restringem (E)", () => {
+    const golden = items.filter((i) => matchesFilters(i, f({ brand: ["golden"] }))).length;
+    const premier = items.filter((i) => matchesFilters(i, f({ brand: ["premier"] }))).length;
+    expect(items.filter((i) => matchesFilters(i, f({ brand: ["golden", "premier"] }))).length).toBe(golden + premier);
+    expect(items.filter((i) => matchesFilters(i, f({ brand: ["golden", "premier"], species: "gatos" }))).length).toBeLessThan(golden + premier);
   });
 
   it("porte nunca inclui gatos", () => {
-    expect(items.filter((i) => matchesFilters(i, { size: "mini" })).some((i) => i.species === "gatos")).toBe(false);
+    expect(items.filter((i) => matchesFilters(i, f({ size: ["mini"] }))).some((i) => i.species === "gatos")).toBe(false);
+  });
+
+  it("castrados vira indicação e é encontrado pela busca", () => {
+    const castrados = items.filter((i) => matchesFilters(i, f({ need: ["castrados"] })));
+    expect(castrados.length).toBeGreaterThan(0);
+    const found = searchItems(index, "ração gato castrado").items;
+    expect(found.slice(0, 3).every((i) => i.needs.includes("castrados") && i.species === "gatos")).toBe(true);
   });
 
   it("conta opções mantendo os outros filtros", () => {
-    const counts = facetCounts(items, { species: "caes", brand: "golden" }, "weight");
+    const counts = facetCounts(items, f({ species: "caes", brand: ["golden"] }), "weight");
     const golden = items.filter((i) => i.species === "caes" && i.brand.slug === "golden");
     expect([...counts.values()].reduce((a, b) => a + b, 0)).toBe(golden.length);
   });
 
-  it("URL ida e volta", () => {
-    const state = { query: "golden 15kg", filters: { species: "caes" as const, weight: 15000 }, sort: null, item: null };
+  it("agrupa pesos da mesma fórmula num cartão só", () => {
+    const groups = groupByFamily(items, items);
+    expect(groups.length).toBeLessThan(items.length);
+    const mini = groups.find((g) => g.family === "royal-canin-mini-adult")!;
+    expect(mini.all.map((i) => i.netWeightGrams)).toEqual([1000, 2500, 7500]);
+  });
+
+  it("URL ida e volta, com valores repetidos", () => {
+    const state = { query: "golden 15kg", filters: f({ species: "caes", brand: ["golden", "premier"], weight: ["acima-15kg"] }), sort: null };
     const qs = writeUrlState(state);
-    const back = readUrlState(Object.fromEntries(new URLSearchParams(qs)));
+    const back = readUrlState(Object.fromEntries([...new URLSearchParams(qs).keys()].map((k) => [k, new URLSearchParams(qs).getAll(k)])));
     expect(back.query).toBe("golden 15kg");
-    expect(back.filters).toMatchObject({ species: "caes", weight: 15000 });
+    expect(back.filters).toMatchObject({ species: "caes", brand: ["golden", "premier"], weight: ["acima-15kg"] });
+  });
+
+  it("ignora valores desconhecidos na URL", () => {
+    expect(readUrlState({ porte: ["gigante", "mini"], tipo: "xyz" }).filters).toMatchObject({ size: ["mini"], kind: [] });
+  });
+});
+
+describe("observação de preço", () => {
+  it("compara com a média de 30 dias (±5% = normal)", () => {
+    expect(priceSignal({ bestPrice: 90, avgPrice30d: 100 })).toMatchObject({ kind: "abaixo", percent: 10 });
+    expect(priceSignal({ bestPrice: 103, avgPrice30d: 100 })).toMatchObject({ kind: "normal" });
+    expect(priceSignal({ bestPrice: 112, avgPrice30d: 100 })).toMatchObject({ kind: "acima", percent: 12 });
+    expect(priceSignal({ bestPrice: 90, avgPrice30d: null }).kind).toBe("sem-historico");
+  });
+
+  it("os dados de exemplo têm média calculada", () => {
+    expect(items.filter((i) => i.avgPrice30d != null).length).toBeGreaterThan(items.length / 2);
   });
 });

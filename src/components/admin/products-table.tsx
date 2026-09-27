@@ -8,7 +8,7 @@ import { FOOD_TYPE_LABEL, LIFE_STAGE_LABEL, SIZE_LABEL, SPECIES_LABEL, formatGra
 import type { ProductRow } from "@/lib/admin/product-list";
 import { cn } from "@/lib/utils";
 
-import { brl, btn, DemoBadge, SeverityBadge, StatusBadge } from "./ui";
+import { brl, btn, formatDateTime, StatusBadge } from "./ui";
 
 /** Tabela de produtos com seleção múltipla e ações em lote. */
 export function ProductsTable({ rows, returnTo, sortHeader }: { rows: ProductRow[]; returnTo: string; sortHeader: Record<string, React.ReactNode> }) {
@@ -64,9 +64,9 @@ export function ProductsTable({ rows, returnTo, sortHeader }: { rows: ProductRow
               <th scope="col" className="px-2 py-2 font-medium">{sortHeader.nome}</th>
               <th scope="col" className="hidden px-2 py-2 font-medium md:table-cell">Para</th>
               <th scope="col" className="px-2 py-2 font-medium">{sortHeader.peso}</th>
-              <th scope="col" className="hidden px-2 py-2 font-medium xl:table-cell">Ofertas</th>
+              <th scope="col" className="hidden px-2 py-2 font-medium xl:table-cell">Preços</th>
               <th scope="col" className="px-2 py-2 font-medium">Estado</th>
-              <th scope="col" className="px-2 py-2 font-medium">{sortHeader.alertas}</th>
+              <th scope="col" className="hidden px-2 py-2 font-medium sm:table-cell">{sortHeader.atualizado}</th>
             </tr>
           </thead>
           <tbody className="divide-y">
@@ -83,19 +83,18 @@ export function ProductsTable({ rows, returnTo, sortHeader }: { rows: ProductRow
                 </td>
                 <td className="px-2 py-2.5">
                   <Link href={`/admin/produtos/${r.id}`} className="font-medium hover:underline">
-                    {r.brand ?? "Sem marca"} · {r.formula ?? "Sem fórmula"}
+                    {r.label}
                   </Link>
                   <p className="text-xs text-muted-foreground">
-                    {r.line && r.line !== r.brand ? `${r.line} · ` : ""}
-                    Sabor: {r.flavor ?? <span className="text-amber-800 dark:text-amber-300">não informado</span>} ·{" "}
-                    {r.foodType ? FOOD_TYPE_LABEL[r.foodType as keyof typeof FOOD_TYPE_LABEL] : "tipo não informado"}
+                    {r.foodType ? FOOD_TYPE_LABEL[r.foodType as keyof typeof FOOD_TYPE_LABEL] : "Tipo pendente"}
+                    {r.verified ? " · conferido" : ""}
                   </p>
                 </td>
                 <td className="hidden px-2 py-2.5 text-xs md:table-cell">
                   {r.species ? SPECIES_LABEL[r.species as keyof typeof SPECIES_LABEL] : "—"}
                   <br />
                   <span className="text-muted-foreground">
-                    {r.lifeStage ? LIFE_STAGE_LABEL[r.lifeStage as keyof typeof LIFE_STAGE_LABEL] : "—"}
+                    {r.lifeStage ? LIFE_STAGE_LABEL[r.lifeStage as keyof typeof LIFE_STAGE_LABEL] : "idade pendente"}
                     {r.species === "caes" && r.size ? ` · ${SIZE_LABEL[r.size as keyof typeof SIZE_LABEL]}` : ""}
                   </span>
                 </td>
@@ -103,30 +102,25 @@ export function ProductsTable({ rows, returnTo, sortHeader }: { rows: ProductRow
                   {r.weightGrams ? formatGrams(r.weightGrams) : <span className="text-xs text-amber-800 dark:text-amber-300">Pendente</span>}
                 </td>
                 <td className="hidden px-2 py-2.5 text-xs xl:table-cell">
-                  {r.offerCount ? (
+                  {r.priceCount ? (
                     <>
-                      {r.activeOfferCount}/{r.offerCount} ativas {r.demoOffers && <DemoBadge />}
+                      {r.priceCount} {r.priceCount === 1 ? "loja" : "lojas"}
                       <br />
                       <span className="text-muted-foreground">menor {brl(r.bestPrice)}</span>
                     </>
                   ) : (
-                    <span className="text-muted-foreground">Sem ofertas</span>
+                    <span className="text-muted-foreground">Sem preço</span>
                   )}
                 </td>
                 <td className="px-2 py-2.5">
                   <StatusBadge status={r.status} />
-                  {r.pendingFields > 0 && <p className="mt-1 text-[0.6875rem] whitespace-nowrap text-muted-foreground">{r.pendingFields} pendentes</p>}
-                </td>
-                <td className="px-2 py-2.5">
-                  {r.maxSeverity ? (
-                    <Link href={`/admin/revisao?produto=${r.id}`} className="inline-flex items-center gap-1.5 hover:underline">
-                      <SeverityBadge severity={r.maxSeverity} />
-                      <span className="text-xs text-muted-foreground tabular-nums">{r.openAlerts}</span>
-                    </Link>
-                  ) : (
-                    <span className="text-xs text-muted-foreground">Nenhum</span>
+                  {r.pending.length > 0 && (
+                    <p className="mt-1 text-[0.6875rem] whitespace-nowrap text-amber-800 dark:text-amber-300" title={r.pending.join(", ")}>
+                      {r.pending.length} {r.pending.length === 1 ? "pendência" : "pendências"}
+                    </p>
                   )}
                 </td>
+                <td className="hidden px-2 py-2.5 text-xs whitespace-nowrap text-muted-foreground sm:table-cell">{formatDateTime(r.updatedAt)}</td>
               </tr>
             ))}
           </tbody>

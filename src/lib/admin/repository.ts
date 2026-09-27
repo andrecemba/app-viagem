@@ -1,30 +1,32 @@
 import "server-only";
 
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import { evaluateAlerts } from "./alerts";
 import { createInitialDb } from "./seed";
 import type { AdminDb } from "./types";
 
 /**
- * Armazenamento da área administrativa.
+ * Armazenamento da administração.
  *
  * Implementação atual: um arquivo JSON no servidor (padrão `.data/admin-db.json`,
  * fora de `public/` e ignorado pelo git). Serve para desenvolvimento e para um
  * único servidor com disco persistente. NÃO serve para hospedagem serverless
- * (disco efêmero) nem para vários servidores: nesse caso, implementar
- * `AdminRepository` com Postgres/Supabase (ver docs/ADMIN.md).
+ * (disco efêmero): nesse caso, implementar `AdminRepository` com um banco
+ * (ex.: Postgres/Supabase). Ver docs/ADMIN.md.
  */
 export interface AdminRepository {
   read(): Promise<AdminDb>;
-  /** Aplica uma alteração de forma serializada e reavalia os alertas. */
+  /** Aplica uma alteração de forma serializada (uma de cada vez). */
   update(mutate: (db: AdminDb) => AdminDb | Promise<AdminDb>): Promise<AdminDb>;
 }
 
+export function adminDataDir() {
+  return process.env.ADMIN_DATA_DIR ?? path.join(process.cwd(), ".data");
+}
+
 function dataFile() {
-  const dir = process.env.ADMIN_DATA_DIR ?? path.join(process.cwd(), ".data");
-  return path.join(dir, "admin-db.json");
+  return path.join(adminDataDir(), "admin-db.json");
 }
 
 class JsonFileRepository implements AdminRepository {
@@ -33,13 +35,16 @@ class JsonFileRepository implements AdminRepository {
   async read(): Promise<AdminDb> {
     const file = dataFile();
     try {
-      return JSON.parse(await readFile(file, "utf8")) as AdminDb;
+      const db = JSON.parse(await readFile(file, "utf8")) as AdminDb | { version?: number };
+      if (db.version === 2) return db as AdminDb;
+      // Arquivo do modelo antigo: guarda uma cópia e recomeça do cadastro inicial.
+      await copyFile(file, `${file}.v${db.version ?? 1}.bak`);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-      const initial = evaluateAlerts(createInitialDb());
-      await this.write(initial);
-      return initial;
     }
+    const initial = createInitialDb();
+    await this.write(initial);
+    return initial;
   }
 
   private async write(db: AdminDb) {
@@ -52,8 +57,7 @@ class JsonFileRepository implements AdminRepository {
 
   update(mutate: (db: AdminDb) => AdminDb | Promise<AdminDb>): Promise<AdminDb> {
     const task = this.queue.then(async () => {
-      const current = await this.read();
-      const next = evaluateAlerts(await mutate(current));
+      const next = await mutate(await this.read());
       await this.write(next);
       return next;
     });
@@ -62,5 +66,5 @@ class JsonFileRepository implements AdminRepository {
   }
 }
 
-const globalForRepo = globalThis as unknown as { adminRepo?: AdminRepository };
-export const adminRepo: AdminRepository = globalForRepo.adminRepo ?? (globalForRepo.adminRepo = new JsonFileRepository());
+const globalForRepo = globalThis as unknown as { adminRepoV2?: AdminRepository };
+export const adminRepo: AdminRepository = globalForRepo.adminRepoV2 ?? (globalForRepo.adminRepoV2 = new JsonFileRepository());

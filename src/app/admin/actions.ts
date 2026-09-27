@@ -4,32 +4,26 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 
+import { ADMIN_STORES } from "@/config/stores";
+import { generateDemoEvents } from "@/lib/analytics/demo";
+import { removeDemoEvents, writeDemoEvents } from "@/lib/analytics/store";
 import { clearLoginFailures, endSession, loginBlocked, registerLoginFailure, requireAdmin, startSession } from "@/lib/admin/auth";
-import { runChecks } from "@/lib/admin/checks";
-import { loadDemoData, removeDemoData } from "@/lib/admin/demo";
-import { FIELD_LABEL } from "@/lib/admin/labels";
+import { productLabel } from "@/lib/admin/labels";
 import {
   AdminError,
-  createOffer,
-  createProduct,
-  editOfferField,
-  editProductField,
-  ignoreAlert,
-  importProductValues,
-  offerFieldAction,
-  productFieldAction,
-  relinkOffer,
-  reopenAlert,
-  setOfferEligibility,
-  setOfferHidden,
+  deleteOffer,
+  deleteProduct,
+  saveOffer,
+  saveProduct,
+  saveSettings,
   setProductsStatus,
-  updateProductMeta,
-  updateStoreRules,
   type ProductInput,
 } from "@/lib/admin/mutations";
 import { adminRepo } from "@/lib/admin/repository";
 import { checkCredentials, isAdminConfigured } from "@/lib/admin/session";
-import type { AdminDb, Availability, OfferFieldKey, ProductFieldKey, ProductFields, PublicationStatus } from "@/lib/admin/types";
+import type { AdminDb, DogSize, FoodType, LifeStage, Need, PublicationStatus, Species } from "@/lib/admin/types";
+import { DOG_SIZE_VALUES, FOOD_TYPE_VALUES, LIFE_STAGE_VALUES, NEEDS } from "@/lib/catalog/vocab";
+import { mockSource } from "@/lib/data/mock-source";
 
 /* Toda ação: 1) confere a sessão, 2) valida a entrada, 3) grava, 4) volta com aviso. */
 
@@ -37,6 +31,7 @@ const text = (fd: FormData, k: string) => {
   const v = fd.get(k);
   return typeof v === "string" ? v.trim() : "";
 };
+const orNull = (v: string) => (v === "" ? null : v);
 
 function back(path: string, params: Record<string, string>): never {
   const url = new URL(path, "http://x");
@@ -56,7 +51,17 @@ async function mutate(returnTo: string, fn: (db: AdminDb) => AdminDb | Promise<A
     throw e;
   }
   revalidatePath("/admin", "layout");
+  revalidatePath("/", "layout");
   back(returnTo, { aviso: ok });
+}
+
+/** "1.234,56", "189,9" ou "189.90" → número. */
+function parseDecimal(raw: string, what: string): number | null {
+  if (!raw) return null;
+  const normalized = raw.includes(",") ? raw.replace(/\./g, "").replace(",", ".") : raw;
+  const n = Number(normalized);
+  if (!Number.isFinite(n) || n < 0) throw new AdminError(`${what} inválido: use um número, ex.: 189,90.`);
+  return n;
 }
 
 // ── Sessão ─────────────────────────────────────────────────────────────
@@ -83,71 +88,66 @@ export async function logoutAction() {
 
 // ── Produtos ───────────────────────────────────────────────────────────
 
-const PRODUCT_KEYS = Object.keys(FIELD_LABEL) as ProductFieldKey[];
-
-function parseProductValue(key: ProductFieldKey, raw: string): ProductFields[ProductFieldKey]["value"] {
-  if (raw === "") return null;
-  if (key === "weightGrams") {
-    const n = Number(raw.replace(",", "."));
-    if (!Number.isFinite(n) || n <= 0 || !Number.isInteger(n)) throw new AdminError("Peso deve ser um número inteiro de gramas maior que zero.");
-    return n;
-  }
-  if (key === "imageUrl" && !/^https:\/\//.test(raw)) throw new AdminError("A imagem precisa de um endereço https.");
-  if (key === "gtin" && !/^\d{8}$|^\d{12,14}$/.test(raw)) throw new AdminError("GTIN/EAN deve ter 8, 12, 13 ou 14 dígitos.");
-  return raw;
+function oneOf<T extends string>(value: string, allowed: readonly T[]): T | null {
+  return (allowed as readonly string[]).includes(value) ? (value as T) : null;
 }
 
-export async function createProductAction(formData: FormData) {
+function productInput(fd: FormData): ProductInput {
+  const weight = parseDecimal(text(fd, "peso"), "Peso");
+  const unit = text(fd, "pesoUnidade") === "g" ? 1 : 1000;
+  const units = parseDecimal(text(fd, "unidades"), "Quantidade");
+  const sources = text(fd, "fontes")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [url, ...rest] = line.split(/\s+/);
+      return { url, note: rest.join(" ").replace(/^[-–·]\s*/, "") };
+    });
+  return {
+    brand: orNull(text(fd, "marca")),
+    line: orNull(text(fd, "linha")),
+    formula: orNull(text(fd, "formula")),
+    flavor: orNull(text(fd, "sabor")),
+    species: oneOf<Species>(text(fd, "especie"), ["caes", "gatos"]),
+    lifeStage: oneOf<LifeStage>(text(fd, "idade"), LIFE_STAGE_VALUES),
+    size: oneOf<DogSize>(text(fd, "porte"), DOG_SIZE_VALUES),
+    foodType: oneOf<FoodType>(text(fd, "tipo"), FOOD_TYPE_VALUES),
+    vetNote: orNull(text(fd, "indicacaoVet")),
+    weightGrams: weight == null ? null : Math.round(weight * unit),
+    unitCount: units == null ? null : Math.round(units),
+    needs: fd.getAll("necessidades").filter((v): v is Need => typeof v === "string" && (NEEDS as string[]).includes(v)),
+    kibbleSize: orNull(text(fd, "grao")),
+    description: orNull(text(fd, "descricao")),
+    gtin: orNull(text(fd, "gtin").replace(/\s/g, "")),
+    sku: orNull(text(fd, "sku")),
+    imageUrl: orNull(text(fd, "foto")),
+    sources,
+    note: text(fd, "nota"),
+    verified: fd.get("conferido") === "on",
+  };
+}
+
+export async function saveProductAction(formData: FormData) {
   const { actor } = await requireAdmin();
-  const input: ProductInput = {};
-  let newId = "";
+  const id = text(formData, "id") || null;
+  const returnTo = id ? `/admin/produtos/${id}` : "/admin/produtos/novo";
+  let savedId = id;
   try {
-    for (const key of PRODUCT_KEYS) {
-      const raw = text(formData, key);
-      if (raw) (input as Record<string, unknown>)[key] = parseProductValue(key, raw);
-    }
-    if (!input.brand || !input.formula || !input.species) throw new AdminError("Informe pelo menos marca, fórmula e espécie.");
-    const source = text(formData, "fonte");
-    if (source && !/^https?:\/\//.test(source)) throw new AdminError("A fonte precisa ser um endereço http(s).");
+    const input = productInput(formData);
+    if (!id && !input.brand && !input.formula) throw new AdminError("Informe pelo menos a marca e a fórmula.");
     await adminRepo.update((db) => {
-      const r = createProduct(db, input, source || null, actor, new Date());
-      newId = r.id;
+      const r = saveProduct(db, id, input, actor, new Date().toISOString());
+      savedId = r.id;
       return r.db;
     });
   } catch (e) {
-    if (e instanceof AdminError) back("/admin/produtos/novo", { erro: e.message });
+    if (e instanceof AdminError) back(returnTo, { erro: e.message });
     throw e;
   }
   revalidatePath("/admin", "layout");
-  back(`/admin/produtos/${newId}`, { aviso: "Ficha criada como rascunho." });
-}
-
-export async function editProductFieldAction(formData: FormData) {
-  const { actor } = await requireAdmin();
-  const id = text(formData, "id");
-  const key = text(formData, "campo") as ProductFieldKey;
-  const returnTo = `/admin/produtos/${id}#campo-${key}`;
-  if (!PRODUCT_KEYS.includes(key)) back(returnTo, { erro: "Campo inválido." });
-  const reviewAt = text(formData, "revisarEm");
-  await mutate(
-    returnTo,
-    (db) =>
-      editProductField(db, id, key, parseProductValue(key, text(formData, "valor")), {
-        lock: formData.get("travar") === "on",
-        reviewAt: reviewAt ? new Date(`${reviewAt}T09:00:00-03:00`).toISOString() : null,
-        note: text(formData, "nota") || undefined,
-        verified: formData.get("verificado") === "on",
-      }, actor, new Date()),
-    `${FIELD_LABEL[key]}: correção salva.`,
-  );
-}
-
-export async function productFieldCommandAction(formData: FormData) {
-  const { actor } = await requireAdmin();
-  const id = text(formData, "id");
-  const key = text(formData, "campo") as ProductFieldKey;
-  const command = text(formData, "comando") as "lock" | "unlock" | "accept_auto" | "clear_review";
-  await mutate(`/admin/produtos/${id}#campo-${key}`, (db) => productFieldAction(db, id, key, command, actor, new Date()), "Campo atualizado.");
+  revalidatePath("/", "layout");
+  back(`/admin/produtos/${savedId}`, { aviso: id ? "Ficha salva." : "Ração cadastrada como rascunho. Complete os tópicos e publique." });
 }
 
 export async function setStatusAction(formData: FormData) {
@@ -155,200 +155,101 @@ export async function setStatusAction(formData: FormData) {
   const ids = formData.getAll("ids").filter((v): v is string => typeof v === "string");
   const status = text(formData, "estado") as PublicationStatus;
   const returnTo = safeReturn(text(formData, "voltar"), "/admin/produtos");
-  if (!ids.length) back(returnTo, { erro: "Selecione ao menos um produto." });
-  if (!["rascunho", "publicado", "oculto"].includes(status)) back(returnTo, { erro: "Estado inválido." });
-  let blocked: { label: string; missing: string[] }[] = [];
+  if (!ids.length || !["rascunho", "publicado", "oculto"].includes(status)) back(returnTo, { erro: "Nenhum produto selecionado." });
+  let blocked: { id: string; missing: string[] }[] = [];
+  let names = new Map<string, string>();
   await adminRepo.update((db) => {
-    const r = setProductsStatus(db, ids, status, actor, new Date());
+    const r = setProductsStatus(db, ids, status, actor, new Date().toISOString());
     blocked = r.blocked;
+    names = new Map(db.products.map((p) => [p.id, productLabel(p)]));
     return r.db;
   });
   revalidatePath("/admin", "layout");
+  revalidatePath("/", "layout");
+  const done = ids.length - blocked.length;
+  const verb = status === "publicado" ? "publicado(s)" : status === "oculto" ? "oculto(s)" : "de volta a rascunho";
   if (blocked.length) {
     back(returnTo, {
-      erro: `Não publicado por falta de dados: ${blocked.map((b) => `${b.label} (${b.missing.join(", ")})`).join("; ")}.`,
-      ...(ids.length > blocked.length ? { aviso: `${ids.length - blocked.length} produto(s) atualizados.` } : {}),
+      ...(done ? { aviso: `${done} produto(s) ${verb}.` } : {}),
+      erro: `Não publicado por falta de dados: ${blocked.map((b) => `${names.get(b.id)} (${b.missing.join(", ")})`).join("; ")}.`,
     });
   }
-  back(returnTo, { aviso: `${ids.length} produto(s) marcados como ${status}.` });
+  back(returnTo, { aviso: `${done} produto(s) ${verb}.` });
 }
 
-export async function productMetaAction(formData: FormData) {
-  const { actor } = await requireAdmin();
+export async function deleteProductAction(formData: FormData) {
+  await requireAdmin();
   const id = text(formData, "id");
-  const url = text(formData, "fonteUrl");
-  if (url && !/^https?:\/\//.test(url)) back(`/admin/produtos/${id}#fontes`, { erro: "A fonte precisa ser um endereço http(s)." });
-  await mutate(
-    `/admin/produtos/${id}#fontes`,
-    (db) =>
-      updateProductMeta(db, id, {
-        verificationNote: formData.has("nota") ? text(formData, "nota") : undefined,
-        addSource: url ? { url, evidence: text(formData, "fonteEvidencia") || "Sem descrição" } : undefined,
-      }, actor, new Date()),
-    "Ficha atualizada.",
-  );
+  if (formData.get("confirmo") !== "on") back(`/admin/produtos/${id}`, { erro: "Marque a confirmação para excluir." });
+  await mutate("/admin/produtos", (db) => deleteProduct(db, id), "Produto excluído.");
 }
 
-/** Só no modo de demonstração: simula uma importação com valores diferentes, para ver a revisão de diferenças. */
-export async function simulateImportAction(formData: FormData) {
-  const { actor } = await requireAdmin();
-  const id = text(formData, "id");
-  await mutate(
-    `/admin/produtos/${id}#campos`,
-    async (db) => {
-      if (!db.settings.demoMode) throw new AdminError("Disponível só no modo de demonstração.");
-      const p = db.products.find((x) => x.id === id);
-      if (!p) throw new AdminError("Produto não encontrado.");
-      const w = p.fields.weightGrams.value;
-      return importProductValues(db, id, {
-        flavor: p.fields.flavor.value === "Frango" ? "Frango e Arroz" : "Frango",
-        weightGrams: w ? (w >= 10000 ? w - 100 : w + 500) : 1000,
-        description: "Descrição recebida da importação de demonstração (texto fictício).",
-      }, "importação de demonstração", actor, new Date());
-    },
-    "Importação de demonstração aplicada. Campos sensíveis ficaram aguardando revisão.",
-  );
-}
+// ── Preços nas lojas ───────────────────────────────────────────────────
 
-// ── Ofertas ────────────────────────────────────────────────────────────
-
-function parsePrice(raw: string) {
-  if (!raw) return null;
-  // "1.234,56" (formato brasileiro) ou "189.9" (valor já salvo).
-  const normalized = raw.includes(",") ? raw.replace(/\./g, "").replace(",", ".") : raw;
-  const n = Number(normalized);
-  if (!Number.isFinite(n) || n <= 0) throw new AdminError("Preço inválido: use um valor maior que zero, ex.: 189,90.");
-  return Math.round(n * 100) / 100;
-}
-
-export async function createOfferAction(formData: FormData) {
-  const { actor } = await requireAdmin();
+export async function saveOfferAction(formData: FormData) {
+  await requireAdmin();
   const productId = text(formData, "productId");
-  const returnTo = `/admin/produtos/${productId}#ofertas`;
+  const offerId = text(formData, "offerId") || null;
+  const returnTo = `/admin/produtos/${productId}#precos`;
+  let price: number | null = null;
+  try {
+    price = parseDecimal(text(formData, "preco"), "Preço");
+  } catch (e) {
+    if (e instanceof AdminError) back(returnTo, { erro: e.message });
+    throw e;
+  }
   await mutate(
     returnTo,
     (db) =>
-      createOffer(db, {
+      saveOffer(
+        db,
         productId,
-        storeId: text(formData, "storeId"),
-        externalId: text(formData, "externalId"),
-        price: parsePrice(text(formData, "price")),
-        availability: (text(formData, "availability") || "disponivel") as Availability,
-        url: text(formData, "url") || null,
-        affiliateUrl: text(formData, "affiliateUrl") || null,
-        sellerName: text(formData, "sellerName") || null,
-        listingTitle: text(formData, "listingTitle") || null,
-        commissionEligibility: (text(formData, "eligibility") || "nao_confirmada") as "confirmada" | "nao_confirmada" | "sem_programa",
-      }, actor, new Date()).db,
-    "Oferta cadastrada.",
+        offerId,
+        {
+          store: text(formData, "loja"),
+          price: price == null ? null : Math.round(price * 100) / 100,
+          url: orNull(text(formData, "link")),
+          sellerName: orNull(text(formData, "vendedor")),
+          available: formData.get("disponivel") === "on",
+        },
+        new Date().toISOString(),
+      ),
+    offerId ? "Preço atualizado." : "Loja adicionada.",
   );
 }
 
-const OFFER_KEYS: OfferFieldKey[] = ["price", "availability", "url", "affiliateUrl", "sellerName", "listingTitle", "variationLabel"];
-
-export async function editOfferFieldAction(formData: FormData) {
-  const { actor } = await requireAdmin();
-  const id = text(formData, "id");
-  const key = text(formData, "campo") as OfferFieldKey;
-  const returnTo = safeReturn(text(formData, "voltar"), `/admin/ofertas/${id}`);
-  if (!OFFER_KEYS.includes(key)) back(returnTo, { erro: "Campo inválido." });
-  const raw = text(formData, "valor");
-  const reviewAt = text(formData, "revisarEm");
-  await mutate(
-    returnTo,
-    (db) => {
-      const value = key === "price" ? parsePrice(raw) : raw || null;
-      if ((key === "url" || key === "affiliateUrl") && value && !/^https:\/\//.test(value as string)) {
-        throw new AdminError("Use um endereço https completo.");
-      }
-      return editOfferField(db, id, key, value as never, {
-        lock: formData.get("travar") === "on",
-        reviewAt: reviewAt ? new Date(`${reviewAt}T09:00:00-03:00`).toISOString() : null,
-        note: text(formData, "nota") || undefined,
-      }, actor, new Date());
-    },
-    "Oferta atualizada.",
-  );
-}
-
-export async function offerFieldCommandAction(formData: FormData) {
-  const { actor } = await requireAdmin();
-  const id = text(formData, "id");
-  const key = text(formData, "campo") as OfferFieldKey;
-  await mutate(`/admin/ofertas/${id}`, (db) => offerFieldAction(db, id, key, text(formData, "comando") as "lock" | "unlock" | "accept_auto" | "clear_review", actor, new Date()), "Campo atualizado.");
-}
-
-export async function hideOfferAction(formData: FormData) {
-  const { actor } = await requireAdmin();
-  const id = text(formData, "id");
-  const hide = text(formData, "ocultar") === "1";
-  const returnTo = safeReturn(text(formData, "voltar"), `/admin/ofertas/${id}`);
-  await mutate(returnTo, (db) => setOfferHidden(db, id, hide, text(formData, "motivo"), actor, new Date()), hide ? "Oferta ocultada." : "Oferta visível novamente.");
-}
-
-export async function eligibilityAction(formData: FormData) {
-  const { actor } = await requireAdmin();
-  const id = text(formData, "id");
-  const value = text(formData, "elegibilidade") as "confirmada" | "nao_confirmada" | "sem_programa";
-  await mutate(`/admin/ofertas/${id}`, (db) => setOfferEligibility(db, id, value, actor, new Date()), "Elegibilidade atualizada.");
-}
-
-export async function relinkOfferAction(formData: FormData) {
-  const { actor } = await requireAdmin();
-  const id = text(formData, "id");
+export async function deleteOfferAction(formData: FormData) {
+  await requireAdmin();
   const productId = text(formData, "productId");
-  if (formData.get("confirmo") !== "on") back(`/admin/ofertas/${id}`, { erro: "Confirme que conferiu as diferenças antes de trocar o produto.", destino: productId });
-  await mutate(`/admin/ofertas/${id}`, (db) => relinkOffer(db, id, productId, actor, new Date()), "Produto vinculado alterado.");
+  await mutate(`/admin/produtos/${productId}#precos`, (db) => deleteOffer(db, productId, text(formData, "offerId"), new Date().toISOString()), "Loja removida.");
 }
 
-export async function checkNowAction(formData: FormData) {
+// ── Dados ──────────────────────────────────────────────────────────────
+
+export async function saveSettingsAction(formData: FormData) {
   await requireAdmin();
-  const ids = formData.getAll("ids").filter((v): v is string => typeof v === "string");
-  const returnTo = safeReturn(text(formData, "voltar"), "/admin/ofertas");
-  let summary = "";
-  await adminRepo.update(async (db) => {
-    const { db: next, run } = await runChecks(db, { trigger: ids.length ? "oferta" : "manual", offerIds: ids.length ? ids : undefined });
-    const t = run.stores.reduce((acc, s) => ({ c: acc.c + s.consulted, u: acc.u + s.updated, e: acc.e + s.errors, s: acc.s + s.skipped }), { c: 0, u: 0, e: 0, s: 0 });
-    summary = `Execução concluída: ${t.c} consultada(s), ${t.u} atualizada(s), ${t.e} com erro, ${t.s} sem integração configurada.`;
-    return next;
-  });
-  revalidatePath("/admin", "layout");
-  back(returnTo, { aviso: summary });
+  const returnTo = safeReturn(text(formData, "voltar"), "/admin/dados");
+  try {
+    const pct = (k: string, what: string) => {
+      const v = parseDecimal(text(formData, k), what);
+      return v == null ? null : v / 100;
+    };
+    const conversionRate = pct("conversao", "Conversão");
+    const commission: Record<string, number | null> = {};
+    for (const s of ADMIN_STORES) commission[s.slug] = pct(`comissao_${s.slug}`, `Comissão de ${s.name}`);
+    await mutate(returnTo, (db) => saveSettings(db, { conversionRate, commission }), "Taxas salvas.");
+  } catch (e) {
+    if (e instanceof AdminError) back(returnTo, { erro: e.message });
+    throw e;
+  }
 }
 
-// ── Alertas ────────────────────────────────────────────────────────────
-
-export async function ignoreAlertAction(formData: FormData) {
-  const { actor } = await requireAdmin();
-  const returnTo = safeReturn(text(formData, "voltar"), "/admin/revisao");
-  await mutate(returnTo, (db) => ignoreAlert(db, text(formData, "id"), text(formData, "justificativa"), actor, new Date()), "Alerta ignorado com justificativa.");
-}
-
-export async function reopenAlertAction(formData: FormData) {
+export async function demoEventsAction(formData: FormData) {
   await requireAdmin();
-  const returnTo = safeReturn(text(formData, "voltar"), "/admin/revisao");
-  await mutate(returnTo, (db) => reopenAlert(db, text(formData, "id")), "Alerta reaberto.");
-}
-
-// ── Lojas e demonstração ───────────────────────────────────────────────
-
-export async function storeRulesAction(formData: FormData) {
-  const { actor } = await requireAdmin();
-  const hide = text(formData, "ocultarApos");
-  await mutate(
-    "/admin/lojas",
-    (db) =>
-      updateStoreRules(db, text(formData, "id"), {
-        frequencyHours: Number(text(formData, "frequencia")),
-        staleAfterHours: Number(text(formData, "desatualizada")),
-        hideStaleAfterHours: hide ? Number(hide) : null,
-      }, actor, new Date()),
-    "Regras da loja salvas.",
-  );
-}
-
-export async function demoModeAction(formData: FormData) {
-  await requireAdmin();
-  const on = text(formData, "ligar") === "1";
-  await mutate("/admin", (db) => (on ? loadDemoData(db) : removeDemoData(db)), on ? "Dados de demonstração carregados (fictícios)." : "Dados de demonstração removidos.");
+  if (text(formData, "acao") === "remover") {
+    await removeDemoEvents();
+    back("/admin/dados", { aviso: "Dados de demonstração removidos." });
+  }
+  await writeDemoEvents(generateDemoEvents(await mockSource.getComparatorItems()));
+  back("/admin/dados?fonte=demo", { aviso: "Dados de demonstração carregados (fictícios)." });
 }

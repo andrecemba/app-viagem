@@ -2,7 +2,7 @@ import type { ComparatorBrand } from "@/lib/comparator/types";
 import { cn } from "@/lib/utils";
 
 /** Texto escuro sobre cores claras (amarelos), branco nas demais. */
-function textColorFor(hex: string) {
+export function textColorFor(hex: string) {
   const m = hex.match(/^#([0-9a-f]{6})$/i);
   if (!m) return "#fff";
   const n = parseInt(m[1], 16);
@@ -19,6 +19,12 @@ function textColorFor(hex: string) {
  * Será trocado pelo logotipo oficial quando ele for cadastrado.
  */
 export function BrandSwatch({ brand, size = 28, className }: { brand: ComparatorBrand; size?: number; className?: string }) {
+  if (brand.logo) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element -- logotipo local, tamanho fixo
+      <img src={brand.logo} alt="" width={size} height={size} className={cn("shrink-0 rounded-[5px] bg-white object-contain", className)} />
+    );
+  }
   return (
     <span
       aria-hidden

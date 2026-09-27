@@ -26,3 +26,4 @@ export const getProductSlugs = source.getProductSlugs;
 export const getComparatorItems = source.getComparatorItems;
 
 export type * from "./types";
+export { catalogSource, findCatalogProduct, getCatalog, getCatalogItem, getOutboundOffer } from "./catalog";

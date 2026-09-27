@@ -20,7 +20,7 @@ function NavList({ items, onNavigate }: { items: NavItem[]; onNavigate?: () => v
   return (
     <ul className="space-y-0.5">
       {items.map((item) => {
-        const active = item.href === "/admin" ? pathname === "/admin" : pathname.startsWith(item.href);
+        const active = pathname.startsWith(item.href);
         return (
           <li key={item.href}>
             <Link

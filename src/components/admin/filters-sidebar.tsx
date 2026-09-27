@@ -11,7 +11,7 @@ import {
 } from "@/lib/admin/product-list";
 import { cn } from "@/lib/utils";
 
-const COLLAPSED_BY_DEFAULT: FilterDimension[] = ["sabor", "peso", "loja"];
+const COLLAPSED_BY_DEFAULT: FilterDimension[] = ["idade", "porte", "dados"];
 const MAX_VISIBLE = 8;
 
 /**

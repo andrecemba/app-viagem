@@ -1,4 +1,4 @@
-import type { DogSize, FoodType, LifeStage, Species } from "@/lib/admin/types";
+import type { DogSize, FoodType, LifeStage, Species } from "@/lib/catalog/vocab";
 
 /**
  * 20 rações reais para o catálogo inicial (10 para cães, 10 para gatos).
@@ -26,7 +26,8 @@ export interface SeedProduct {
   line: string;
   formula: string;
   species: Species;
-  lifeStage: LifeStage;
+  /** "castrado" vira fase "adulto" + indicação "Castrados" quando a fonte diz "adulto". */
+  lifeStage: LifeStage | "castrado";
   size: DogSize | null;
   /** null = não consta no nome/fonte: fica "pendente de verificação". */
   flavor: string | null;

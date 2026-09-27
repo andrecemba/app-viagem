@@ -1,397 +1,224 @@
-import { productLabel } from "./alerts";
-import { newHistoryId } from "./checks";
-import { acceptAutoValue, applyAutoValue, applyManualValue, emptyField, sameValue, setLock, setReviewDate } from "./fields";
-import { FIELD_LABEL, SENSITIVE_PRODUCT_FIELDS } from "./labels";
-import type {
-  AdminDb,
-  AdminOffer,
-  AdminProduct,
-  FieldState,
-  HistoryEvent,
-  OfferFieldKey,
-  ProductFieldKey,
-  ProductFields,
-  PublicationStatus,
-} from "./types";
+import { ADMIN_STORES, storeInfo } from "@/config/stores";
+import { NEEDS } from "@/lib/catalog/vocab";
 
-/**
- * Operações da administração como funções puras sobre o banco (testáveis).
- * As server actions só validam a entrada, chamam estas funções e gravam.
- */
+import { slugify } from "./text";
+import type { AdminDb, AdminOffer, AdminProduct, AdminSettings, PublicationStatus } from "./types";
 
+/** Erro de validação: a mensagem vai direto para a tela. */
 export class AdminError extends Error {}
 
-const ev = (e: Omit<HistoryEvent, "id">): HistoryEvent => ({ id: newHistoryId(), ...e });
+const HISTORY_DAYS = 90;
 
-function productEvent(p: AdminProduct, actor: string, at: string, partial: Partial<HistoryEvent> & Pick<HistoryEvent, "type" | "message">): HistoryEvent {
-  return ev({ entity: "product", entityId: p.id, productId: p.id, offerId: null, result: "ok", actor, at, ...partial });
+// ── Produto ────────────────────────────────────────────────────────────
+
+/** Campos editáveis no formulário por tópicos. */
+export type ProductInput = Pick<
+  AdminProduct,
+  | "brand"
+  | "line"
+  | "formula"
+  | "flavor"
+  | "species"
+  | "lifeStage"
+  | "size"
+  | "foodType"
+  | "vetNote"
+  | "weightGrams"
+  | "unitCount"
+  | "needs"
+  | "kibbleSize"
+  | "description"
+  | "gtin"
+  | "sku"
+  | "imageUrl"
+  | "sources"
+  | "note"
+  | "verified"
+>;
+
+/** Campos obrigatórios para publicar (o resto pode ficar "Pendente de verificação"). */
+const REQUIRED: { key: keyof ProductInput; label: string }[] = [
+  { key: "brand", label: "marca" },
+  { key: "formula", label: "fórmula" },
+  { key: "species", label: "espécie" },
+  { key: "lifeStage", label: "idade" },
+  { key: "foodType", label: "tipo" },
+  { key: "weightGrams", label: "peso" },
+];
+
+export function missingForPublish(p: ProductInput): string[] {
+  return REQUIRED.filter(({ key }) => p[key] == null || p[key] === "").map((r) => r.label);
 }
 
-function withProduct(db: AdminDb, id: string, fn: (p: AdminProduct) => { product: AdminProduct; events: HistoryEvent[] }): AdminDb {
+/** Tópicos vazios (mostrados como "Pendente de verificação"). */
+export function pendingFields(p: AdminProduct): string[] {
+  const checks: [unknown, string][] = [
+    [p.brand, "Marca"],
+    [p.formula, "Fórmula"],
+    [p.flavor, "Sabor"],
+    [p.species, "Espécie"],
+    [p.lifeStage, "Idade"],
+    [p.species === "gatos" ? "n/a" : p.size, "Porte"],
+    [p.foodType, "Tipo"],
+    [p.weightGrams, "Peso"],
+    [p.kibbleSize, "Tamanho do grão"],
+    [p.description, "Descrição"],
+    [p.gtin, "Código de barras"],
+    [p.imageUrl, "Foto"],
+  ];
+  return checks.filter(([v]) => v == null || v === "").map(([, label]) => label);
+}
+
+function isHttpsUrl(value: string) {
+  try {
+    return new URL(value).protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function validateProduct(input: ProductInput) {
+  if (input.weightGrams != null && (!Number.isFinite(input.weightGrams) || input.weightGrams <= 0 || input.weightGrams > 50000)) {
+    throw new AdminError("Peso inválido: informe um valor entre 1 g e 50 kg.");
+  }
+  if (input.unitCount != null && (!Number.isInteger(input.unitCount) || input.unitCount < 1 || input.unitCount > 200)) {
+    throw new AdminError("Quantidade de unidades inválida.");
+  }
+  if (input.gtin && !/^(\d{8}|\d{12}|\d{13}|\d{14})$/.test(input.gtin)) {
+    throw new AdminError("Código de barras (GTIN/EAN) deve ter 8, 12, 13 ou 14 dígitos.");
+  }
+  if (input.imageUrl && !isHttpsUrl(input.imageUrl)) throw new AdminError("A foto precisa ser um endereço https://.");
+  for (const s of input.sources) if (!isHttpsUrl(s.url)) throw new AdminError(`Fonte inválida (use https://): ${s.url}`);
+  if (input.needs.some((n) => !NEEDS.includes(n))) throw new AdminError("Indicação desconhecida.");
+  if (input.species === "gatos" && input.size) input.size = null;
+}
+
+function uniqueSlug(db: AdminDb, input: ProductInput, selfId: string | null) {
+  const base =
+    slugify([input.brand, input.line !== input.brand ? input.line : null, input.formula, input.flavor, input.weightGrams ? `${input.weightGrams}g` : null].filter(Boolean).join(" ")) ||
+    "produto";
+  let slug = base;
+  for (let i = 2; db.products.some((p) => p.slug === slug && p.id !== selfId); i++) slug = `${base}-${i}`;
+  return slug;
+}
+
+export function saveProduct(db: AdminDb, id: string | null, input: ProductInput, actor: string, now: string): { db: AdminDb; id: string } {
+  validateProduct(input);
+  if (!id) {
+    const newId = `prd-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+    const product: AdminProduct = {
+      ...input,
+      id: newId,
+      slug: uniqueSlug(db, input, null),
+      status: "rascunho",
+      offers: [],
+      createdAt: now,
+      updatedAt: now,
+      updatedBy: actor,
+    };
+    return { db: { ...db, products: [product, ...db.products] }, id: newId };
+  }
   const current = db.products.find((p) => p.id === id);
   if (!current) throw new AdminError("Produto não encontrado.");
-  const { product, events } = fn(current);
-  return { ...db, products: db.products.map((p) => (p.id === id ? product : p)), history: [...db.history, ...events] };
-}
-
-function withOffer(db: AdminDb, id: string, fn: (o: AdminOffer) => { offer: AdminOffer; events: HistoryEvent[] }): AdminDb {
-  const current = db.offers.find((o) => o.id === id);
-  if (!current) throw new AdminError("Oferta não encontrada.");
-  const { offer, events } = fn(current);
-  return { ...db, offers: db.offers.map((o) => (o.id === id ? offer : o)), history: [...db.history, ...events] };
-}
-
-// ── Produtos ───────────────────────────────────────────────────────────
-
-export type ProductInput = Partial<{ [K in ProductFieldKey]: ProductFields[K]["value"] }>;
-
-const REQUIRED_TO_PUBLISH: ProductFieldKey[] = ["brand", "formula", "species", "lifeStage", "weightGrams", "foodType"];
-
-export function missingForPublish(p: AdminProduct): string[] {
-  return REQUIRED_TO_PUBLISH.filter((k) => p.fields[k].value == null || p.fields[k].value === "").map((k) => FIELD_LABEL[k]);
-}
-
-export function createProduct(db: AdminDb, input: ProductInput, sourceUrl: string | null, actor: string, now: Date) {
-  const at = now.toISOString();
-  const fields = {} as ProductFields;
-  for (const key of Object.keys(FIELD_LABEL) as ProductFieldKey[]) {
-    const value = input[key] ?? null;
-    const empty = emptyField<never>();
-    (fields as unknown as Record<string, FieldState<unknown>>)[key] =
-      value == null || value === "" ? empty : { ...applyManualValue(empty as FieldState<unknown>, value, actor, at, { lock: true }), verification: "pendente" };
+  if (current.status === "publicado") {
+    const missing = missingForPublish(input);
+    if (missing.length) throw new AdminError(`Produto publicado não pode ficar sem: ${missing.join(", ")}. Volte para rascunho antes de apagar esses dados.`);
   }
-  const id = `prd-${now.getTime().toString(36)}${Math.floor(Math.random() * 1e4).toString(36)}`;
-  const product: AdminProduct = {
-    id,
-    status: "rascunho",
-    fields,
-    sources: sourceUrl ? [{ url: sourceUrl, kind: "loja", evidence: "Informado no cadastro manual", checkedHow: "Cadastro manual", checkedAt: at }] : [],
-    verificationNote: "",
-    imageStatus: fields.imageUrl.value ? "nao_verificada" : "ausente",
-    createdAt: at,
-    updatedAt: at,
-  };
-  const history = productEvent(product, actor, at, { type: "criacao", message: "Ficha cadastrada manualmente (rascunho). Campos ficam “pendentes de verificação” até a conferência." });
-  return { db: { ...db, products: [...db.products, product], history: [...db.history, history] }, id };
+  const updated: AdminProduct = { ...current, ...input, slug: current.slug, updatedAt: now, updatedBy: actor };
+  return { db: { ...db, products: db.products.map((p) => (p.id === id ? updated : p)) }, id };
 }
 
-export function editProductField<K extends ProductFieldKey>(
-  db: AdminDb,
-  id: string,
-  key: K,
-  value: ProductFields[K]["value"],
-  opts: { lock: boolean; reviewAt: string | null; note?: string; verified?: boolean },
-  actor: string,
-  now: Date,
-): AdminDb {
-  const at = now.toISOString();
-  return withProduct(db, id, (p) => {
-    const field = p.fields[key] as FieldState<unknown>;
-    if (sameValue(field.value, value) && field.locked === opts.lock && field.reviewAt === opts.reviewAt && !opts.verified) {
-      return { product: p, events: [] };
-    }
-    let next = applyManualValue(field, value, actor, at, { lock: opts.lock, note: opts.note, reviewAt: opts.reviewAt });
-    if (opts.verified && value != null && value !== "") next = { ...next, verification: "verificado" };
-    const product: AdminProduct = {
-      ...p,
-      fields: { ...p.fields, [key]: next },
-      imageStatus: key === "imageUrl" ? (value ? "nao_verificada" : "ausente") : p.imageStatus,
-      updatedAt: at,
-    };
-    const events = [
-      productEvent(p, actor, at, {
-        type: "edicao_manual",
-        field: key,
-        from: field.value,
-        to: value,
-        message: `${FIELD_LABEL[key]}: correção manual${opts.lock ? " (travada)" : ""}${opts.reviewAt ? `, revisar em ${new Date(opts.reviewAt).toLocaleDateString("pt-BR")}` : ""}${opts.verified ? ", marcada como verificada" : ""}.${opts.note ? ` Nota: ${opts.note}` : ""}`,
-      }),
-    ];
-    return { product, events };
-  });
-}
-
-export function productFieldAction(
-  db: AdminDb,
-  id: string,
-  key: ProductFieldKey,
-  action: "lock" | "unlock" | "accept_auto" | "clear_review",
-  actor: string,
-  now: Date,
-): AdminDb {
-  const at = now.toISOString();
-  return withProduct(db, id, (p) => {
-    const field = p.fields[key] as FieldState<unknown>;
-    let next = field;
-    let message = "";
-    if (action === "lock") [next, message] = [setLock(field, true), "Campo travado."];
-    if (action === "unlock") [next, message] = [setLock(field, false), "Trava removida: a próxima importação pode atualizar o valor."];
-    if (action === "clear_review") [next, message] = [setReviewDate(field, null), "Data de revisão removida."];
-    if (action === "accept_auto") {
-      if (!field.pendingAuto && !field.auto) throw new AdminError("Não há valor automático para aceitar.");
-      next = acceptAutoValue(field);
-      message = `Valor automático aceito (${String(next.value)}); correção manual removida.`;
-    }
-    return {
-      product: { ...p, fields: { ...p.fields, [key]: next }, updatedAt: at },
-      events: [productEvent(p, actor, at, { type: action === "accept_auto" ? "importacao" : "trava", field: key, from: field.value, to: next.value, message: `${FIELD_LABEL[key]}: ${message}` })],
-    };
-  });
-}
-
-/** Importação de valores de catálogo (conector ou arquivo). Respeita travas e campos sensíveis. */
-export function importProductValues(db: AdminDb, id: string, values: ProductInput, source: string, actor: string, now: Date): AdminDb {
-  const at = now.toISOString();
-  return withProduct(db, id, (p) => {
-    const fields = { ...p.fields };
-    const events: HistoryEvent[] = [];
-    for (const key of Object.keys(values) as ProductFieldKey[]) {
-      const res = applyAutoValue(fields[key] as FieldState<unknown>, values[key], source, at, { sensitive: SENSITIVE_PRODUCT_FIELDS.includes(key) });
-      (fields as unknown as Record<string, FieldState<unknown>>)[key] = res.field;
-      if (res.outcome === "unchanged" || res.outcome === "ignored_empty") continue;
-      events.push(
-        productEvent(p, actor, at, {
-          type: "importacao",
-          field: key,
-          from: res.previous,
-          to: values[key],
-          result: res.outcome === "held" ? "pendente" : "ok",
-          message:
-            res.outcome === "held"
-              ? `${FIELD_LABEL[key]}: novo valor recebido e retido para revisão (campo ${fields[key].locked ? "travado" : "sensível"}).`
-              : res.outcome === "replaced_manual"
-                ? `${FIELD_LABEL[key]}: importação substituiu correção manual sem trava.`
-                : `${FIELD_LABEL[key]}: valor importado.`,
-        }),
-      );
-    }
-    return { product: { ...p, fields, updatedAt: at }, events };
-  });
-}
-
-export function setProductsStatus(db: AdminDb, ids: string[], status: PublicationStatus, actor: string, now: Date) {
-  const at = now.toISOString();
-  const blocked: { id: string; label: string; missing: string[] }[] = [];
-  let next = db;
-  for (const id of ids) {
-    const p = next.products.find((x) => x.id === id);
-    if (!p || p.status === status) continue;
+export function setProductsStatus(db: AdminDb, ids: string[], status: PublicationStatus, actor: string, now: string) {
+  const blocked: { id: string; missing: string[] }[] = [];
+  const products = db.products.map((p) => {
+    if (!ids.includes(p.id) || p.status === status) return p;
     if (status === "publicado") {
       const missing = missingForPublish(p);
       if (missing.length) {
-        blocked.push({ id, label: productLabel(p) || id, missing });
-        continue;
+        blocked.push({ id: p.id, missing });
+        return p;
       }
     }
-    next = withProduct(next, id, (prod) => ({
-      product: { ...prod, status, updatedAt: at },
-      events: [productEvent(prod, actor, at, { type: "status", from: prod.status, to: status, message: `Estado alterado para ${status}.` })],
-    }));
-  }
-  return { db: next, blocked };
-}
-
-export function updateProductMeta(db: AdminDb, id: string, meta: { verificationNote?: string; addSource?: { url: string; evidence: string } }, actor: string, now: Date) {
-  const at = now.toISOString();
-  return withProduct(db, id, (p) => {
-    const sources = meta.addSource
-      ? [...p.sources, { url: meta.addSource.url, kind: "loja" as const, evidence: meta.addSource.evidence, checkedHow: `Informado por ${actor}`, checkedAt: at }]
-      : p.sources;
-    return {
-      product: { ...p, sources, verificationNote: meta.verificationNote ?? p.verificationNote, updatedAt: at },
-      events: [productEvent(p, actor, at, { type: "edicao_manual", message: meta.addSource ? `Fonte adicionada: ${meta.addSource.url}` : "Nota de verificação atualizada." })],
-    };
+    return { ...p, status, updatedAt: now, updatedBy: actor };
   });
+  return { db: { ...db, products }, blocked };
 }
 
-// ── Ofertas ────────────────────────────────────────────────────────────
+export function deleteProduct(db: AdminDb, id: string): AdminDb {
+  const p = db.products.find((x) => x.id === id);
+  if (!p) throw new AdminError("Produto não encontrado.");
+  if (p.status === "publicado") throw new AdminError("Tire o produto do ar (rascunho ou oculto) antes de excluir.");
+  return { ...db, products: db.products.filter((x) => x.id !== id) };
+}
+
+// ── Preços nas lojas ───────────────────────────────────────────────────
 
 export interface OfferInput {
-  productId: string;
-  storeId: string;
-  externalId: string;
+  store: string;
   price: number | null;
-  availability: AdminOffer["fields"]["availability"]["value"];
   url: string | null;
-  affiliateUrl: string | null;
   sellerName: string | null;
-  listingTitle: string | null;
-  commissionEligibility: AdminOffer["commissionEligibility"];
+  available: boolean;
 }
 
-export function createOffer(db: AdminDb, input: OfferInput, actor: string, now: Date) {
-  const at = now.toISOString();
-  if (!db.products.some((p) => p.id === input.productId)) throw new AdminError("Produto não encontrado.");
-  if (!db.stores.some((s) => s.id === input.storeId)) throw new AdminError("Loja não encontrada.");
-  const m = <T,>(v: T | null) => (v == null || v === "" ? emptyField<T>() : applyManualValue(emptyField<T>(), v, actor, at, { lock: false }));
-  const id = `ofr-${now.getTime().toString(36)}${Math.floor(Math.random() * 1e4).toString(36)}`;
-  const offer: AdminOffer = {
-    id,
-    productId: input.productId,
-    storeId: input.storeId,
-    externalId: input.externalId,
-    fields: {
-      price: m(input.price),
-      availability: m(input.availability),
-      url: m(input.url),
-      affiliateUrl: m(input.affiliateUrl),
-      sellerName: m(input.sellerName),
-      listingTitle: m(input.listingTitle),
-      variationLabel: emptyField(),
-    },
-    hidden: null,
-    dataOrigin: "manual",
-    commissionEligibility: input.commissionEligibility,
-    demo: false,
-    lastCheckedAt: input.price ? at : null,
-    lastSuccessAt: input.price ? at : null,
-    consecutiveFailures: 0,
-    lastError: null,
-    linkStatus: "nao_verificado",
-    imageStatus: "nao_verificada",
-    sellerChangedAt: null,
-    variationChangedAt: null,
-    createdAt: at,
-    updatedAt: at,
-  };
-  const events = [
-    ev({ entity: "offer", entityId: id, productId: input.productId, offerId: id, at, actor, type: "criacao", result: "ok", message: "Oferta cadastrada manualmente." }),
-    ...(input.price
-      ? [ev({ entity: "offer", entityId: id, productId: input.productId, offerId: id, at, actor, type: "preco" as const, field: "price", from: null, to: input.price, result: "ok" as const, message: "Preço informado manualmente." })]
-      : []),
-  ];
-  return { db: { ...db, offers: [...db.offers, offer], history: [...db.history, ...events] }, id };
-}
-
-export function editOfferField<K extends OfferFieldKey>(
-  db: AdminDb,
-  id: string,
-  key: K,
-  value: AdminOffer["fields"][K]["value"],
-  opts: { lock: boolean; reviewAt: string | null; note?: string },
-  actor: string,
-  now: Date,
-): AdminDb {
-  const at = now.toISOString();
-  return withOffer(db, id, (o) => {
-    const field = o.fields[key] as FieldState<unknown>;
-    if (sameValue(field.value, value) && field.locked === opts.lock && field.reviewAt === opts.reviewAt) return { offer: o, events: [] };
-    if (key === "price" && value != null && !((value as number) > 0)) throw new AdminError("Preço precisa ser maior que zero.");
-    const next = applyManualValue(field, value, actor, at, opts);
-    const offer: AdminOffer = {
-      ...o,
-      fields: { ...o.fields, [key]: next },
-      // Preço confirmado à mão conta como atualização bem-sucedida.
-      lastSuccessAt: key === "price" && value != null ? at : o.lastSuccessAt,
-      linkStatus: key === "affiliateUrl" ? "nao_verificado" : o.linkStatus,
-      updatedAt: at,
-    };
-    return {
-      offer,
-      events: [
-        ev({ entity: "offer", entityId: id, productId: o.productId, offerId: id, at, actor, type: key === "price" ? "preco" : "edicao_manual", field: key,
-          from: field.value, to: value, result: "ok",
-          message: `Correção manual de ${key}${opts.lock ? " (travada)" : ""}.${opts.note ? ` Nota: ${opts.note}` : ""}` }),
-      ],
-    };
-  });
-}
-
-export function offerFieldAction(db: AdminDb, id: string, key: OfferFieldKey, action: "lock" | "unlock" | "accept_auto" | "clear_review", actor: string, now: Date) {
-  const at = now.toISOString();
-  return withOffer(db, id, (o) => {
-    const field = o.fields[key] as FieldState<unknown>;
-    if (action === "accept_auto" && !field.pendingAuto && !field.auto) throw new AdminError("Não há valor automático para aceitar.");
-    const next =
-      action === "lock" ? setLock(field, true) : action === "unlock" ? setLock(field, false) : action === "clear_review" ? setReviewDate(field, null) : acceptAutoValue(field);
-    return {
-      offer: { ...o, fields: { ...o.fields, [key]: next }, updatedAt: at },
-      events: [ev({ entity: "offer", entityId: id, productId: o.productId, offerId: id, at, actor, type: action === "accept_auto" ? "importacao" : "trava",
-        field: key, from: field.value, to: next.value, result: "ok",
-        message: action === "lock" ? `Campo ${key} travado.` : action === "unlock" ? `Trava de ${key} removida.` : action === "clear_review" ? `Data de revisão de ${key} removida.` : `Valor automático de ${key} aceito.` })],
-    };
-  });
-}
-
-export function setOfferHidden(db: AdminDb, id: string, hidden: boolean, reason: string, actor: string, now: Date) {
-  const at = now.toISOString();
-  if (hidden && !reason.trim()) throw new AdminError("Informe o motivo para ocultar a oferta.");
-  return withOffer(db, id, (o) => ({
-    offer: { ...o, hidden: hidden ? { reason, by: actor, at } : null, updatedAt: at },
-    events: [ev({ entity: "offer", entityId: id, productId: o.productId, offerId: id, at, actor, type: "status", result: "ok",
-      message: hidden ? `Oferta ocultada: ${reason}` : "Oferta voltou a ficar visível." })],
-  }));
-}
-
-export function setOfferEligibility(db: AdminDb, id: string, value: AdminOffer["commissionEligibility"], actor: string, now: Date) {
-  const at = now.toISOString();
-  return withOffer(db, id, (o) => ({
-    offer: { ...o, commissionEligibility: value, updatedAt: at },
-    events: [ev({ entity: "offer", entityId: id, productId: o.productId, offerId: id, at, actor, type: "edicao_manual", from: o.commissionEligibility, to: value, result: "ok",
-      message: `Elegibilidade para comissão: ${value}.` })],
-  }));
-}
-
-/** Troca o produto vinculado. Exige confirmação explícita depois de ver as diferenças. */
-export function relinkOffer(db: AdminDb, id: string, productId: string, actor: string, now: Date) {
-  const at = now.toISOString();
-  const target = db.products.find((p) => p.id === productId);
-  if (!target) throw new AdminError("Produto de destino não encontrado.");
-  return withOffer(db, id, (o) => {
-    const from = db.products.find((p) => p.id === o.productId);
-    return {
-      offer: { ...o, productId, updatedAt: at },
-      events: [ev({ entity: "offer", entityId: id, productId, offerId: id, at, actor, type: "vinculo", from: o.productId, to: productId, result: "ok",
-        message: `Oferta movida de “${from ? productLabel(from) : o.productId}” para “${productLabel(target)}”.` })],
-    };
-  });
-}
-
-// ── Alertas ────────────────────────────────────────────────────────────
-
-export function ignoreAlert(db: AdminDb, id: string, justification: string, actor: string, now: Date): AdminDb {
-  if (justification.trim().length < 5) throw new AdminError("Escreva uma justificativa (mínimo 5 caracteres).");
-  const at = now.toISOString();
-  const alert = db.alerts.find((a) => a.id === id);
-  if (!alert) throw new AdminError("Alerta não encontrado.");
-  return {
-    ...db,
-    alerts: db.alerts.map((a) => (a.id === id ? { ...a, status: "ignorado", resolution: { by: actor, at, note: justification.trim(), action: "ignorado" } } : a)),
-    history: [
-      ...db.history,
-      ev({ entity: alert.offerId ? "offer" : alert.productId ? "product" : "store", entityId: alert.offerId ?? alert.productId ?? alert.storeId ?? "sistema",
-        productId: alert.productId, offerId: alert.offerId, at, actor, type: "alerta", result: "ignorado",
-        message: `Alerta ignorado: ${alert.title}. Justificativa: ${justification.trim()}` }),
-    ],
-  };
-}
-
-export function reopenAlert(db: AdminDb, id: string): AdminDb {
-  return { ...db, alerts: db.alerts.map((a) => (a.id === id ? { ...a, status: "aberto", resolution: null } : a)) };
-}
-
-// ── Lojas ──────────────────────────────────────────────────────────────
-
-export function updateStoreRules(
-  db: AdminDb,
-  id: string,
-  rules: { frequencyHours: number; staleAfterHours: number; hideStaleAfterHours: number | null },
-  actor: string,
-  now: Date,
-): AdminDb {
-  if (!(rules.frequencyHours >= 1 && rules.frequencyHours <= 24 * 30)) throw new AdminError("Frequência entre 1 h e 30 dias.");
-  if (!(rules.staleAfterHours >= rules.frequencyHours)) throw new AdminError("O prazo de desatualização deve ser maior ou igual à frequência.");
-  if (rules.hideStaleAfterHours != null && rules.hideStaleAfterHours < rules.staleAfterHours) {
-    throw new AdminError("Ocultar só depois de a oferta estar desatualizada.");
+export function validateOfferUrl(store: string, url: string) {
+  if (!isHttpsUrl(url)) throw new AdminError("O link precisa começar com https://.");
+  const host = new URL(url).hostname.replace(/^www\./, "");
+  const { domains, name } = storeInfo(store);
+  if (domains.length && !domains.some((d) => host === d || host.endsWith(`.${d}`))) {
+    throw new AdminError(`O link não é de ${name} (domínio ${host}). Confira se colou o link da loja certa.`);
   }
-  const at = now.toISOString();
+}
+
+export function saveOffer(db: AdminDb, productId: string, offerId: string | null, input: OfferInput, now: string): AdminDb {
+  const product = db.products.find((p) => p.id === productId);
+  if (!product) throw new AdminError("Produto não encontrado.");
+  if (!ADMIN_STORES.some((s) => s.slug === input.store)) throw new AdminError("Escolha uma loja da lista.");
+  if (input.price != null && (!Number.isFinite(input.price) || input.price <= 0 || input.price > 20000)) {
+    throw new AdminError("Preço inválido.");
+  }
+  if (input.url) validateOfferUrl(input.store, input.url);
+  if (product.offers.some((o) => o.store === input.store && o.id !== offerId)) {
+    throw new AdminError(`${storeInfo(input.store).name} já tem um preço neste produto. Edite o existente.`);
+  }
+
+  const cutoff = new Date(new Date(now).getTime() - HISTORY_DAYS * 86400_000).toISOString();
+  const withHistory = (history: AdminOffer["history"], price: number | null) => {
+    const kept = history.filter((h) => h.at >= cutoff);
+    return price != null && kept.at(-1)?.price !== price ? [...kept, { at: now, price }] : kept;
+  };
+
+  let offers: AdminOffer[];
+  if (offerId) {
+    const current = product.offers.find((o) => o.id === offerId);
+    if (!current) throw new AdminError("Preço não encontrado.");
+    offers = product.offers.map((o) => (o.id === offerId ? { ...o, ...input, updatedAt: now, history: withHistory(o.history, input.price) } : o));
+  } else {
+    const offer: AdminOffer = {
+      id: `ofr-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
+      ...input,
+      updatedAt: now,
+      history: withHistory([], input.price),
+    };
+    offers = [...product.offers, offer];
+  }
+  return { ...db, products: db.products.map((p) => (p.id === productId ? { ...p, offers, updatedAt: now } : p)) };
+}
+
+export function deleteOffer(db: AdminDb, productId: string, offerId: string, now: string): AdminDb {
   return {
     ...db,
-    stores: db.stores.map((s) => (s.id === id ? { ...s, ...rules } : s)),
-    history: [
-      ...db.history,
-      ev({ entity: "store", entityId: id, productId: null, offerId: null, at, actor, type: "edicao_manual", result: "ok",
-        message: `Regras da loja atualizadas: consulta a cada ${rules.frequencyHours} h, desatualizada após ${rules.staleAfterHours} h, ${rules.hideStaleAfterHours == null ? "nunca ocultar" : `ocultar após ${rules.hideStaleAfterHours} h`}.` }),
-    ],
+    products: db.products.map((p) => (p.id === productId ? { ...p, offers: p.offers.filter((o) => o.id !== offerId), updatedAt: now } : p)),
   };
+}
+
+// ── Configuração dos relatórios ────────────────────────────────────────
+
+export function saveSettings(db: AdminDb, settings: AdminSettings): AdminDb {
+  const bad = (v: number | null) => v != null && (!Number.isFinite(v) || v < 0 || v > 1);
+  if (bad(settings.conversionRate)) throw new AdminError("Conversão deve ficar entre 0% e 100%.");
+  for (const [store, v] of Object.entries(settings.commission)) {
+    if (bad(v)) throw new AdminError(`Comissão de ${storeInfo(store).name} deve ficar entre 0% e 100%.`);
+  }
+  return { ...db, settings };
 }

@@ -1,3 +1,5 @@
+import { NEED_LABEL } from "@/lib/catalog/vocab";
+
 import type { ComparatorItem } from "./types";
 
 /**
@@ -229,7 +231,9 @@ export function buildSearchIndex(items: ComparatorItem[]): SearchIndex {
       ...tokenize(SPECIES_WORDS[item.species]),
       ...tokenize(KIND_WORDS[item.kind]),
       ...item.lifeStages.flatMap((s) => tokenize(s)),
-      ...item.sizes.flatMap((s) => tokenize(s)),
+      // "Todos os portes" não vira palavra de busca (senão "mini" acharia qualquer ração).
+      ...(item.sizes && item.sizes.length < 4 ? item.sizes : []).flatMap((s) => tokenize(s)),
+      ...item.needs.flatMap((n) => tokenize(NEED_LABEL[n])),
     ];
     return { item, tokens: [...new Set(tokens)], brandTokens: new Set(brandWords) };
   });
@@ -338,7 +342,7 @@ export function searchItems(index: SearchIndex, query: string): SearchResult {
   });
 
   const byScore = (a: { score: number; item: ComparatorItem }, b: { score: number; item: ComparatorItem }) =>
-    b.score - a.score || a.item.bestPrice - b.item.bestPrice;
+    b.score - a.score || (a.item.bestPrice ?? 1e9) - (b.item.bestPrice ?? 1e9);
 
   const exact = scored.filter((s) => s.complete).sort(byScore);
   if (exact.length) {

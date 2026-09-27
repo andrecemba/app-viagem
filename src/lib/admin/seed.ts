@@ -1,71 +1,59 @@
-import { SEED_CHECKED_AT, SEED_CHECKED_HOW, seedProducts, type SeedProduct } from "@/data/admin/seed-products";
-import { defaultStores } from "@/data/admin/stores";
+import { SEED_CHECKED_HOW, seedProducts, type SeedProduct } from "@/data/admin/seed-products";
 
-import { emptyField, fieldFrom } from "./fields";
-import type { AdminDb, AdminProduct, HistoryEvent, ProductFields } from "./types";
+import { slugify } from "./text";
+import type { AdminDb, AdminProduct, LifeStage, Need } from "./types";
 
-const SOURCE = "Cadastro inicial (busca na web)";
-
+/**
+ * Converte o cadastro inicial para o modelo atual. Só usa o que está na fonte:
+ * campos pendentes ou ausentes ficam vazios ("Pendente de verificação").
+ */
 export function productFromSeed(seed: SeedProduct, now: string): AdminProduct {
-  const v = (key: NonNullable<SeedProduct["pending"]>[number]) =>
-    seed.pending?.includes(key) ? ("pendente" as const) : ("fonte_localizada" as const);
-  const f = <T,>(value: T | null, verification: "fonte_localizada" | "pendente" = "fonte_localizada") =>
-    fieldFrom<T>(value, SOURCE, SEED_CHECKED_AT, verification);
+  const pending = new Set(seed.pending ?? []);
+  const keep = <T,>(key: NonNullable<SeedProduct["pending"]>[number], value: T | null) => (pending.has(key) ? null : value);
+  const mentionsAdult = /adult/i.test([seed.formula, ...seed.sources.map((s) => s.evidence)].join(" "));
 
-  const fields: ProductFields = {
-    brand: f(seed.brand),
-    line: f(seed.line),
-    formula: f(seed.formula, v("formula")),
-    species: f(seed.species),
-    lifeStage: f(seed.lifeStage, v("lifeStage")),
-    size: seed.species === "gatos" ? emptyField("fonte_localizada") : f(seed.size, v("size")),
-    flavor: f(seed.flavor, v("flavor")),
-    weightGrams: f(seed.weightGrams, v("weightGrams")),
-    foodType: f(seed.foodType),
-    gtin: emptyField(),
-    manufacturerSku: emptyField(),
-    vetIndication: seed.vetIndication ? f(seed.vetIndication) : emptyField(seed.foodType === "medicamentosa" ? "pendente" : "fonte_localizada"),
-    kibbleSize: emptyField(),
-    description: emptyField(),
-    imageUrl: emptyField(),
-  };
-  // Porte de gato: "não se aplica" não é uma pendência.
-  if (seed.species === "gatos") fields.size = { ...fields.size, verification: "fonte_localizada" };
+  let lifeStage: LifeStage | null;
+  const needs: Need[] = [];
+  if (seed.lifeStage === "castrado") {
+    needs.push("castrados");
+    lifeStage = mentionsAdult ? "adulto" : null;
+  } else {
+    lifeStage = seed.lifeStage;
+  }
 
   return {
     id: `prd-${seed.key}`,
+    slug: seed.key,
     status: "rascunho",
-    fields,
-    sources: seed.sources.map((s) => ({ ...s, checkedHow: SEED_CHECKED_HOW, checkedAt: SEED_CHECKED_AT })),
-    verificationNote: seed.note ?? "",
-    imageStatus: "ausente",
+    brand: seed.brand,
+    line: seed.line,
+    formula: keep("formula", seed.formula),
+    flavor: keep("flavor", seed.flavor),
+    species: seed.species,
+    lifeStage: keep("lifeStage", lifeStage),
+    size: seed.species === "gatos" ? null : keep("size", seed.size),
+    foodType: seed.foodType,
+    vetNote: seed.vetIndication,
+    weightGrams: keep("weightGrams", seed.weightGrams),
+    unitCount: null,
+    needs,
+    kibbleSize: null,
+    description: null,
+    gtin: null,
+    sku: null,
+    imageUrl: null,
+    sources: seed.sources.map((s) => ({ url: s.url, note: `${s.kind === "fabricante" ? "Fabricante" : "Loja"} · ${s.evidence}` })),
+    note: [seed.note, pending.size ? `Pendente por divergência entre fontes: ${[...pending].join(", ")}.` : "", SEED_CHECKED_HOW].filter(Boolean).join("\n"),
+    verified: false,
+    offers: [],
     createdAt: now,
     updatedAt: now,
+    updatedBy: "sistema",
   };
 }
 
 export function createInitialDb(now = new Date().toISOString()): AdminDb {
   const products = seedProducts.map((s) => productFromSeed(s, now));
-  const history: HistoryEvent[] = products.map((p) => ({
-    id: `his-seed-${p.id}`,
-    at: now,
-    entity: "product",
-    entityId: p.id,
-    productId: p.id,
-    offerId: null,
-    type: "criacao",
-    result: "ok",
-    actor: "sistema",
-    message: "Ficha criada no cadastro inicial a partir de fontes localizadas por busca na web. Revisar antes de publicar.",
-  }));
-  return {
-    version: 1,
-    settings: { demoMode: false, priceOutlierUp: 0.35, priceOutlierDown: 0.3, failuresBeforeAlert: 3 },
-    stores: defaultStores,
-    products,
-    offers: [],
-    history,
-    alerts: [],
-    runs: [],
-  };
+  for (const p of products) p.slug = slugify(p.slug);
+  return { version: 2, products, settings: { conversionRate: null, commission: {} } };
 }

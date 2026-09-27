@@ -36,9 +36,11 @@ Tema claro/escuro no ícone de sol/lua. Estados de carregamento aparecem ao nave
 
 ## Área administrativa
 
-Painel privado em `/admin` (login obrigatório), separado do site público: cadastro de rações, ofertas, links de afiliado,
-fila de revisão, execuções e regras por loja. Configuração, o que já funciona e o que falta conectar (banco de dados,
-conectores das lojas, agendamento) estão em [`docs/ADMIN.md`](docs/ADMIN.md).
+Painel privado em `/admin` (login obrigatório), separado do site público, com dois itens: **Produtos** (cadastro por
+tópicos, preços e links por loja) e **Dados** (buscas, rações e marcas mais procuradas, cliques por loja e comissão
+estimada). Configuração e o que falta conectar estão em [`docs/ADMIN.md`](docs/ADMIN.md).
+
+O site lê os dados de exemplo por padrão; com `CATALOGO_PUBLICO=admin`, passa a mostrar só as rações publicadas no painel.
 
 ## Estrutura
 

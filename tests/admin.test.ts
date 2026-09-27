@@ -1,25 +1,20 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { seedProducts } from "@/data/admin/seed-products";
-import { evaluateAlerts, findIssues, weightFromTitle } from "@/lib/admin/alerts";
-import { applyFailure, applyReading, applyStaleRule, runChecks } from "@/lib/admin/checks";
-import { loadDemoData, removeDemoData } from "@/lib/admin/demo";
-import { acceptAutoValue, applyAutoValue, applyManualValue, emptyField, fieldFrom } from "@/lib/admin/fields";
-import {
-  createOffer,
-  createProduct,
-  editOfferField,
-  editProductField,
-  ignoreAlert,
-  importProductValues,
-  setProductsStatus,
-} from "@/lib/admin/mutations";
-import { buildRows, computeFacets, matchesFilters, productFiltersHref, readProductFilters } from "@/lib/admin/product-list";
+import { EMPTY_DRAFT } from "@/components/admin/product-form";
+import { AdminError, missingForPublish, pendingFields, saveOffer, saveProduct, saveSettings, setProductsStatus } from "@/lib/admin/mutations";
+import { buildRows, computeFacets, matchesFilters, readProductFilters } from "@/lib/admin/product-list";
 import { createInitialDb } from "@/lib/admin/seed";
 import { hashPassword, signSession, verifyPassword, verifySessionToken } from "@/lib/admin/session";
+import { buildReport } from "@/lib/analytics/report";
+import { isAutomated, sanitizeQuery } from "@/lib/analytics/sanitize";
+import type { AnalyticsEvent } from "@/lib/analytics/types";
+import { adminProductToItem, averageBestPrice } from "@/lib/data/admin-source";
+
+vi.mock("server-only", () => ({}));
 
 const NOW = new Date("2026-09-27T12:00:00-03:00");
-const later = (h: number) => new Date(NOW.getTime() + h * 3600_000);
+const iso = (daysAgo = 0) => new Date(NOW.getTime() - daysAgo * 86400_000).toISOString();
 
 describe("catálogo inicial", () => {
   it("tem 20 produtos reais, 10 de cada espécie, cada um com fonte", () => {
@@ -30,193 +25,158 @@ describe("catálogo inicial", () => {
     expect(new Set(seedProducts.map((p) => p.key)).size).toBe(20);
   });
 
-  it("nenhum campo nasce como verificado, e dado ausente fica vazio e pendente", () => {
-    const db = createInitialDb(NOW.toISOString());
-    for (const p of db.products) for (const f of Object.values(p.fields)) expect(f.verification).not.toBe("verificado");
-    const hills = db.products.find((p) => p.id === "prd-hills-sd-adulto-pequenos-mini-frango")!;
-    expect(hills.fields.weightGrams.value).toBeNull();
-    expect(hills.fields.weightGrams.verification).toBe("pendente");
-    const rc = db.products.find((p) => p.id === "prd-rc-mini-adult-7-5")!;
-    expect(rc.fields.flavor.value).toBeNull();
-    expect(rc.fields.gtin.value).toBeNull();
-    expect(rc.fields.imageUrl.value).toBeNull();
+  it("nada nasce conferido nem publicado; dado ausente ou divergente fica vazio", () => {
+    const db = createInitialDb(iso());
+    expect(db.products.every((p) => !p.verified && p.status === "rascunho" && p.offers.length === 0)).toBe(true);
+    expect(db.products.every((p) => p.gtin === null && p.imageUrl === null && p.description === null)).toBe(true);
+    const hills = db.products.find((p) => p.id.includes("hills"))!;
+    expect(hills.weightGrams).toBeNull();
+    expect(pendingFields(hills)).toContain("Peso");
+    const premierCats = db.products.find((p) => p.id === "prd-premier-gatos-castrados-salmao-7-5")!;
+    expect(premierCats.formula).toBeNull();
   });
 
-  it("não aponta duplicatas entre sabores ou pesos diferentes", () => {
-    const db = createInitialDb(NOW.toISOString());
-    expect(findIssues(db, NOW).filter((f) => f.type === "possivel_duplicata")).toHaveLength(0);
-  });
-});
-
-describe("campo com valor automático e correção manual", () => {
-  const at = NOW.toISOString();
-
-  it("importação aplica valor quando não há correção", () => {
-    const r = applyAutoValue(fieldFrom(100, "x", at, "fonte_localizada"), 110, "integração", at);
-    expect(r.outcome).toBe("applied");
-    expect(r.field.value).toBe(110);
-  });
-
-  it("campo travado não é sobrescrito; o novo valor fica pendente", () => {
-    const manual = applyManualValue(fieldFrom(100, "x", at, "fonte_localizada"), 95, "admin", at, { lock: true });
-    const r = applyAutoValue(manual, 120, "integração", at);
-    expect(r.outcome).toBe("held");
-    expect(r.field.value).toBe(95);
-    expect(r.field.pendingAuto?.value).toBe(120);
-    const accepted = acceptAutoValue(r.field);
-    expect(accepted.value).toBe(120);
-    expect(accepted.manual).toBeNull();
-    expect(accepted.locked).toBe(false);
-  });
-
-  it("correção sem trava é substituída, mas o resultado informa (não é silencioso)", () => {
-    const manual = applyManualValue(fieldFrom(100, "x", at, "fonte_localizada"), 95, "admin", at, { lock: false });
-    const r = applyAutoValue(manual, 120, "integração", at);
-    expect(r.outcome).toBe("replaced_manual");
-  });
-
-  it("campos sensíveis nunca trocam sem revisão", () => {
-    const r = applyAutoValue(fieldFrom("Frango", "x", at, "fonte_localizada"), "Carne", "integração", at, { sensitive: true });
-    expect(r.outcome).toBe("held");
-    expect(r.field.value).toBe("Frango");
-  });
-
-  it("leitura vazia ou zero não apaga o valor", () => {
-    const f = fieldFrom(100, "x", at, "fonte_localizada");
-    expect(applyAutoValue(f, 0, "integração", at).field.value).toBe(100);
-    expect(applyAutoValue(f, null, "integração", at).field.value).toBe(100);
-    expect(applyAutoValue(emptyField<string>(), "  ", "integração", at).outcome).toBe("ignored_empty");
+  it("gatos castrados viram idade adulto + indicação Castrados só quando a fonte diz adulto", () => {
+    const db = createInitialDb(iso());
+    const castrados = db.products.filter((p) => p.needs.includes("castrados"));
+    expect(castrados.length).toBe(6);
+    expect(castrados.every((p) => p.lifeStage === "adulto")).toBe(true);
   });
 });
 
-describe("produtos", () => {
-  it("cadastro manual cria rascunho e publicação exige campos obrigatórios", () => {
-    let db = createInitialDb(NOW.toISOString());
-    const created = createProduct(db, { brand: "Marca Teste", formula: "Adulto", species: "caes" }, null, "admin:a", NOW);
-    db = created.db;
-    const p = db.products.find((x) => x.id === created.id)!;
-    expect(p.status).toBe("rascunho");
-    const r = setProductsStatus(db, [created.id], "publicado", "admin:a", NOW);
-    expect(r.blocked[0].missing).toEqual(expect.arrayContaining(["Peso (g)", "Tipo de ração", "Fase da vida"]));
+describe("cadastro de produto", () => {
+  const base = { ...EMPTY_DRAFT, brand: "Marca Teste", formula: "Adulto", species: "caes" as const };
+
+  it("cria como rascunho; publicar exige os obrigatórios", () => {
+    let db = createInitialDb(iso());
+    const r = saveProduct(db, null, base, "admin:a", iso());
+    db = r.db;
+    expect(db.products[0].status).toBe("rascunho");
+    expect(missingForPublish(db.products[0])).toEqual(["idade", "tipo", "peso"]);
+    const blocked = setProductsStatus(db, [r.id], "publicado", "admin:a", iso());
+    expect(blocked.blocked[0].missing).toContain("peso");
+    const done = saveProduct(db, r.id, { ...base, lifeStage: "adulto", foodType: "seca", weightGrams: 15000 }, "admin:a", iso());
+    const pub = setProductsStatus(done.db, [r.id], "publicado", "admin:a", iso());
+    expect(pub.blocked).toHaveLength(0);
+    expect(pub.db.products.find((p) => p.id === r.id)!.status).toBe("publicado");
   });
 
-  it("correção manual travada sobrevive à importação e fica no histórico", () => {
-    let db = createInitialDb(NOW.toISOString());
-    const id = "prd-golden-gatos-castrados-frango-10-1";
-    db = editProductField(db, id, "description", "Descrição conferida", { lock: true, reviewAt: null }, "admin:a", NOW);
-    db = importProductValues(db, id, { description: "Texto da loja", flavor: "Carne" }, "integração:teste", "automação", later(1));
-    const p = db.products.find((x) => x.id === id)!;
-    expect(p.fields.description.value).toBe("Descrição conferida");
-    expect(p.fields.description.pendingAuto?.value).toBe("Texto da loja");
-    expect(p.fields.flavor.value).toBe("Frango");
-    expect(p.fields.flavor.pendingAuto?.value).toBe("Carne");
-    expect(db.history.filter((h) => h.productId === id && h.result === "pendente")).toHaveLength(2);
-    const alerts = evaluateAlerts(db, later(1)).alerts.filter((a) => a.type === "valor_automatico_divergente" && a.productId === id);
-    expect(alerts).toHaveLength(2);
-  });
-});
-
-describe("verificações", () => {
-  it("falha não troca o preço por zero e conta falhas seguidas", () => {
-    let db = createInitialDb(NOW.toISOString());
-    const c = createOffer(db, { productId: db.products[0].id, storeId: "amazon", externalId: "B0TESTE", price: 199.9, availability: "disponivel", url: "https://www.amazon.com.br/dp/B0TESTE", affiliateUrl: null, sellerName: "Amazon", listingTitle: null, commissionEligibility: "nao_confirmada" }, "admin:a", NOW);
-    db = c.db;
-    let offer = db.offers.find((o) => o.id === c.id)!;
-    for (let i = 0; i < 3; i++) offer = applyFailure(offer, "erro", later(i).toISOString()).offer;
-    expect(offer.fields.price.value).toBe(199.9);
-    expect(offer.consecutiveFailures).toBe(3);
-    db = { ...db, offers: db.offers.map((o) => (o.id === offer.id ? offer : o)) };
-    expect(findIssues(db, later(3)).some((f) => f.type === "falha_repetida" && f.offerId === c.id)).toBe(true);
+  it("edição persiste e publicado não pode perder obrigatório", () => {
+    const db0 = createInitialDb(iso());
+    const created = saveProduct(db0, null, { ...base, lifeStage: "adulto", foodType: "seca", weightGrams: 3000 }, "admin:a", iso());
+    const pub = setProductsStatus(created.db, [created.id], "publicado", "admin:a", iso()).db;
+    const edited = saveProduct(pub, created.id, { ...base, lifeStage: "adulto", foodType: "seca", weightGrams: 3000, flavor: "Frango", description: "Texto" }, "admin:b", iso());
+    const p = edited.db.products.find((x) => x.id === created.id)!;
+    expect(p.flavor).toBe("Frango");
+    expect(p.updatedBy).toBe("admin:b");
+    expect(() => saveProduct(pub, created.id, { ...base, lifeStage: "adulto", foodType: "seca", weightGrams: null }, "admin:a", iso())).toThrow(AdminError);
   });
 
-  it("preço travado pelo admin não muda na leitura automática", () => {
-    let db = createInitialDb(NOW.toISOString());
-    const c = createOffer(db, { productId: db.products[0].id, storeId: "petz", externalId: "P1", price: 100, availability: "disponivel", url: "https://www.petz.com.br/x", affiliateUrl: null, sellerName: "Petz", listingTitle: null, commissionEligibility: "sem_programa" }, "admin:a", NOW);
-    db = editOfferField(c.db, c.id, "price", 89.9, { lock: true, reviewAt: null }, "admin:a", NOW);
-    const offer = db.offers.find((o) => o.id === c.id)!;
-    const { offer: after, events } = applyReading(offer, { price: 120 }, "integração:petz", later(1).toISOString());
-    expect(after.fields.price.value).toBe(89.9);
-    expect(after.fields.price.pendingAuto?.value).toBe(120);
-    expect(events[0].result).toBe("pendente");
-  });
-
-  it("sem conector real a consulta não acontece e a execução diz isso", async () => {
-    let db = createInitialDb(NOW.toISOString());
-    db = createOffer(db, { productId: db.products[0].id, storeId: "amazon", externalId: "B0X", price: 100, availability: "disponivel", url: "https://www.amazon.com.br/dp/B0X", affiliateUrl: null, sellerName: "Amazon", listingTitle: null, commissionEligibility: "nao_confirmada" }, "admin:a", NOW).db;
-    const { db: after, run } = await runChecks(db, { trigger: "manual", now: later(49) });
-    expect(run.stores[0].consulted).toBe(0);
-    expect(run.stores[0].skipped).toBe(1);
-    expect(run.stores[0].message).toMatch(/pendente de configuração/);
-    expect(after.offers[0].fields.price.value).toBe(100);
-  });
-
-  it("regra da loja oculta oferta antiga", () => {
-    let db = createInitialDb(NOW.toISOString());
-    db = createOffer(db, { productId: db.products[0].id, storeId: "amazon", externalId: "B0Y", price: 100, availability: "disponivel", url: "https://www.amazon.com.br/dp/B0Y", affiliateUrl: null, sellerName: "Amazon", listingTitle: null, commissionEligibility: "nao_confirmada" }, "admin:a", NOW).db;
-    expect(applyStaleRule(db, later(100)).db.offers[0].hidden).toBeNull();
-    expect(applyStaleRule(db, later(200)).db.offers[0].hidden?.reason).toMatch(/168 h/);
+  it("valida código de barras, foto e peso", () => {
+    const db = createInitialDb(iso());
+    expect(() => saveProduct(db, null, { ...base, gtin: "123" }, "a", iso())).toThrow(/8, 12, 13 ou 14/);
+    expect(() => saveProduct(db, null, { ...base, imageUrl: "http://x.com/a.png" }, "a", iso())).toThrow(/https/);
+    expect(() => saveProduct(db, null, { ...base, weightGrams: 0 }, "a", iso())).toThrow(/Peso/);
   });
 });
 
-describe("alertas", () => {
-  it("não duplica a cada avaliação e resolve quando a condição some", () => {
-    let db = createInitialDb(NOW.toISOString());
-    db = evaluateAlerts(db, NOW);
-    const count = db.alerts.length;
-    db = evaluateAlerts(db, later(1));
-    db = evaluateAlerts(db, later(2));
-    expect(db.alerts.length).toBe(count);
-    const img = db.alerts.find((a) => a.type === "imagem")!;
-    expect(img.occurrences).toBe(3);
-    expect(img.firstSeenAt).toBe(NOW.toISOString());
-    db = editProductField(db, img.productId!, "imageUrl", "https://exemplo.com/foto.jpg", { lock: true, reviewAt: null }, "admin:a", later(3));
-    db = { ...db, products: db.products.map((p) => (p.id === img.productId ? { ...p, imageStatus: "ok" } : p)) };
-    db = evaluateAlerts(db, later(3));
-    expect(db.alerts.find((a) => a.id === img.id)!.status).toBe("resolvido");
+describe("preços nas lojas", () => {
+  const setup = () => {
+    const db = createInitialDb(iso(40));
+    return { db, id: db.products[0].id };
+  };
+
+  it("guarda histórico quando o preço muda e recusa link de outra loja", () => {
+    const { db, id } = setup();
+    let next = saveOffer(db, id, null, { store: "amazon", price: 100, url: "https://www.amazon.com.br/dp/X", sellerName: null, available: true }, iso(20));
+    const offerId = next.products[0].offers[0].id;
+    next = saveOffer(next, id, offerId, { store: "amazon", price: 90, url: "https://www.amazon.com.br/dp/X", sellerName: null, available: true }, iso(1));
+    expect(next.products[0].offers[0].history.map((h) => h.price)).toEqual([100, 90]);
+    expect(() => saveOffer(db, id, null, { store: "petz", price: 10, url: "https://www.cobasi.com.br/x", sellerName: null, available: true }, iso())).toThrow(/não é de Petz/);
+    expect(() => saveOffer(next, id, null, { store: "amazon", price: 10, url: null, sellerName: null, available: true }, iso())).toThrow(/já tem um preço/);
   });
 
-  it("ignorar exige justificativa e continua ignorado", () => {
-    let db = evaluateAlerts(createInitialDb(NOW.toISOString()), NOW);
-    const a = db.alerts[0];
-    expect(() => ignoreAlert(db, a.id, "", "admin:a", NOW)).toThrow();
-    db = evaluateAlerts(ignoreAlert(db, a.id, "Foto será enviada pela marca", "admin:a", NOW), later(1));
-    expect(db.alerts.find((x) => x.id === a.id)!.status).toBe("ignorado");
+  it("média de 30 dias usa o preço vigente de cada dia", () => {
+    const offer = { id: "o", store: "amazon", price: 90, url: null, sellerName: null, available: true, updatedAt: iso(), history: [{ at: iso(40), price: 100 }, { at: iso(3), price: 90 }] };
+    const avg = averageBestPrice([offer], NOW)!;
+    expect(avg).toBeGreaterThan(90);
+    expect(avg).toBeLessThan(100);
+    expect(averageBestPrice([{ ...offer, history: [{ at: iso(2), price: 90 }] }], NOW)).toBeNull();
   });
 
-  it("modo de demonstração gera alertas marcados e é removido por completo", async () => {
-    let db = loadDemoData(createInitialDb(NOW.toISOString()), NOW);
-    expect(db.offers.every((o) => o.demo)).toBe(true);
-    db = (await runChecks(db, { trigger: "manual", now: later(49) })).db;
-    db = evaluateAlerts(db, later(49));
-    const types = new Set(db.alerts.filter((a) => a.demo).map((a) => a.type));
-    for (const t of ["link_afiliado", "indisponivel", "divergencia", "preco_fora_da_curva", "mudanca_vendedor"]) expect(types).toContain(t);
-    const cleaned = removeDemoData(db);
-    expect(cleaned.offers).toHaveLength(0);
-    expect(cleaned.history.some((h) => h.demo)).toBe(false);
-    expect(cleaned.runs.some((r) => r.demo)).toBe(false);
-  });
-
-  it("lê peso do título do anúncio", () => {
-    expect(weightFromTitle("Ração Golden 10,1kg")).toBe(10100);
-    expect(weightFromTitle("Sachê 85 g")).toBe(85);
+  it("só produto publicado e completo vai para o site; link nunca vai junto", () => {
+    const { db, id } = setup();
+    const withOffer = saveOffer(db, id, null, { store: "amazon", price: 100, url: "https://www.amazon.com.br/dp/X", sellerName: null, available: true }, iso());
+    const p = withOffer.products.find((x) => x.id === id)!;
+    expect(adminProductToItem(p)).toBeNull();
+    const item = adminProductToItem({ ...p, status: "publicado" })!;
+    expect(item.bestPrice).toBe(100);
+    expect(JSON.stringify(item)).not.toContain("amazon.com.br/dp/X");
   });
 });
 
 describe("filtros da tela de produtos", () => {
-  const db = createInitialDb(NOW.toISOString());
-  const rows = buildRows(evaluateAlerts(db, NOW));
+  const rows = buildRows(createInitialDb(iso()).products);
 
   it("combina dimensões e conta opções mantendo os outros filtros", () => {
-    const f = { especie: ["gatos"], marca: ["Golden"] };
-    expect(rows.filter((r) => matchesFilters(r, f)).length).toBe(2);
-    const marca = computeFacets(rows, f, {}).find((x) => x.dim === "marca")!;
-    expect(marca.options.find((o) => o.value === "Royal Canin")!.count).toBe(2);
+    const { filters } = readProductFilters({ especie: "gatos", marca: ["Golden", "Royal Canin"] });
+    const list = rows.filter((r) => matchesFilters(r, filters));
+    expect(list.every((r) => r.species === "gatos" && ["Golden", "Royal Canin"].includes(r.brand!))).toBe(true);
+    expect(list).toHaveLength(4);
+    const facets = computeFacets(rows, filters);
+    expect(facets.find((f) => f.dim === "especie")!.options.find((o) => o.value === "caes")!.count).toBeGreaterThan(0);
   });
 
-  it("sabores com vírgula funcionam na URL", () => {
-    const href = productFiltersHref({}, "nome", "asc", { dim: "sabor", value: "Carne, Frango e Cereais" });
-    const params = Object.fromEntries(new URL(href, "http://x").searchParams);
-    expect(readProductFilters(params).filters.sabor).toEqual(["Carne, Frango e Cereais"]);
+  it("filtra por pendência", () => {
+    const { filters } = readProductFilters({ dados: "completo" });
+    expect(rows.filter((r) => matchesFilters(r, filters))).toHaveLength(0);
+  });
+});
+
+describe("relatórios", () => {
+  const snap = { productId: "p1", productName: "Golden · Frango", brand: "Golden", species: "caes", kind: "seca", sizes: ["medio"], weightGrams: 15000 };
+  const events: AnalyticsEvent[] = [
+    { at: iso(1), type: "produto", ...snap },
+    { at: iso(1), type: "produto", ...snap },
+    { at: iso(1), type: "clique", ...snap, store: "amazon", price: 200 },
+    { at: iso(2), type: "clique", ...snap, store: "petz", price: 100 },
+    { at: iso(2), type: "busca", q: "golden", results: 4 },
+    { at: iso(2), type: "busca", q: "marca x", results: 0 },
+    { at: iso(2), type: "filtro", dim: "peso", value: "10-15kg" },
+    { at: iso(60), type: "clique", ...snap, store: "amazon", price: 999 },
+  ];
+
+  it("conta cliques, lojas, rações, buscas sem resultado e ignora fora do período", () => {
+    const r = buildReport(events, { from: new Date(iso(7)), to: NOW, conversionRate: null, commission: {} });
+    expect(r.totals).toMatchObject({ clicks: 2, views: 2, searches: 2, clickedValue: 300 });
+    expect(r.stores.map((s) => s.store)).toEqual(["amazon", "petz"]);
+    expect(r.products[0]).toMatchObject({ label: "Golden · Frango", views: 2, clicks: 2 });
+    expect(r.zeroResultTerms).toEqual([{ q: "marca x", count: 1 }]);
+    expect(r.weights.map((w) => w.label)).toEqual(["15 kg", "10 a 15 kg"]);
+    expect(r.clicksByDay.length).toBeGreaterThanOrEqual(7);
+    expect(r.estimate.total).toBeNull();
+  });
+
+  it("estima comissão só com taxas informadas", () => {
+    const r = buildReport(events, { from: new Date(iso(7)), to: NOW, conversionRate: 0.1, commission: { amazon: 0.05 } });
+    expect(r.stores.find((s) => s.store === "amazon")!.estimate).toBe(1);
+    expect(r.stores.find((s) => s.store === "petz")!.estimate).toBeNull();
+    expect(r.estimate.total).toBe(1);
+    expect(r.estimate.storesWithoutRate).toEqual(["Petz"]);
+  });
+
+  it("taxas fora de 0–100% são recusadas", () => {
+    expect(() => saveSettings(createInitialDb(iso()), { conversionRate: 2, commission: {} })).toThrow(AdminError);
+  });
+
+  it("não grava termos com cara de dado pessoal e ignora robôs", () => {
+    expect(sanitizeQuery("  Golden   15KG ")).toBe("golden 15kg");
+    expect(sanitizeQuery("fulano@email.com")).toBeNull();
+    expect(sanitizeQuery("41 99999-8888")).toBeNull();
+    expect(sanitizeQuery("123.456.789-00")).toBeNull();
+    expect(isAutomated(new Headers({ "user-agent": "Googlebot/2.1" }))).toBe(true);
+    expect(isAutomated(new Headers({ "user-agent": "Mozilla/5.0", "sec-purpose": "prefetch" }))).toBe(true);
+    expect(isAutomated(new Headers({ "user-agent": "Mozilla/5.0 (iPhone)" }))).toBe(false);
   });
 });
 

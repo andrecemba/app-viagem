@@ -10,11 +10,9 @@ import { SESSION_COOKIE, sessionSecret, verifySessionToken } from "@/lib/admin/s
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const isLogin = pathname === "/admin/entrar";
-  // O agendador usa um segredo próprio (CRON_SECRET), verificado na rota.
-  const isCron = pathname === "/api/admin/cron";
 
   const response = (() => {
-    if (isLogin || isCron) return NextResponse.next();
+    if (isLogin) return NextResponse.next();
     const session = verifySessionToken(request.cookies.get(SESSION_COOKIE)?.value, sessionSecret());
     if (session) return NextResponse.next();
     if (pathname.startsWith("/api/")) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
