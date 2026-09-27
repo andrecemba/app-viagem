@@ -34,11 +34,19 @@ Para ver no celular da mesma rede: `npm run dev -- -H 0.0.0.0` e acesse `http://
 
 Tema claro/escuro no ícone de sol/lua. Estados de carregamento aparecem ao navegar no funil e nos produtos.
 
+## Área administrativa
+
+Painel privado em `/admin` (login obrigatório), separado do site público: cadastro de rações, ofertas, links de afiliado,
+fila de revisão, execuções e regras por loja. Configuração, o que já funciona e o que falta conectar (banco de dados,
+conectores das lojas, agendamento) estão em [`docs/ADMIN.md`](docs/ADMIN.md).
+
 ## Estrutura
 
 ```
 src/
   app/                      rotas (App Router)
+    (site)/                 site público (layout com cabeçalho e rodapé)
+    admin/                  área administrativa (layout próprio, protegida)
     [especie]/[[...filtros]]  funil: /caes/racao-seca/adulto/medio/premium/golden
     produto/[slug]            página do produto
     ir/[offerId]              saída para a loja (simulada na Fase 0)

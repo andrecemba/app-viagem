@@ -35,24 +35,31 @@ export function ProductCard({ item, onOpen }: { item: ComparatorItem; onOpen: (i
             {speciesLabel(item)} · {lifeStageLabel(item)}
           </Row>
           <Row label="Porte">{sizeLabel(item)}</Row>
-          <Row label="Sabor">{item.flavor}</Row>
+          <Row label="Sabor">{item.flavor || "Não informado"}</Row>
           <Row label="Peso">
             <span className="font-semibold text-foreground">{packageLabel(item)}</span>
           </Row>
         </dl>
 
         <div className="mt-auto pt-3">
-          <div className="border-t pt-3">
-            <p className="text-[0.6875rem] font-medium text-muted-foreground">Menor preço ilustrativo</p>
-            <p className="flex flex-wrap items-baseline gap-x-2">
-              <span className="font-display text-xl font-bold tabular-nums">{formatBRL(item.bestPrice)}</span>
-              <span className="text-xs text-muted-foreground tabular-nums">
-                {formatBRL(unit.value)}
-                {unit.label}
-              </span>
-            </p>
-            <p className="mt-0.5 text-xs text-muted-foreground">Comparado em {storeCountLabel(item.storeCount)}</p>
-          </div>
+          {item.storeCount === 0 ? (
+            <div className="border-t pt-3">
+              <p className="text-[0.6875rem] font-medium text-muted-foreground">Menor preço</p>
+              <p className="text-sm font-medium">Sem ofertas ativas</p>
+            </div>
+          ) : (
+            <div className="border-t pt-3">
+              <p className="text-[0.6875rem] font-medium text-muted-foreground">Menor preço ilustrativo</p>
+              <p className="flex flex-wrap items-baseline gap-x-2">
+                <span className="font-display text-xl font-bold tabular-nums">{formatBRL(item.bestPrice)}</span>
+                <span className="text-xs text-muted-foreground tabular-nums">
+                  {formatBRL(unit.value)}
+                  {unit.label}
+                </span>
+              </p>
+              <p className="mt-0.5 text-xs text-muted-foreground">Comparado em {storeCountLabel(item.storeCount)}</p>
+            </div>
+          )}
           <Button
             className="mt-3 w-full"
             onClick={() => onOpen(item)}
