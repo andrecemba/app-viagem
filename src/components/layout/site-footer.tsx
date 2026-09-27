@@ -8,17 +8,19 @@ import { SiteLogo } from "./site-logo";
 
 export function SiteFooter() {
   return (
-    <footer className="mt-24 border-t bg-card">
+    <footer className="mt-20 border-t bg-muted/40">
       <div className="mx-auto max-w-6xl px-4 py-12">
-        <div className="mb-10 flex gap-3 rounded-2xl bg-secondary p-4 text-sm text-secondary-foreground">
-          <Info className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden />
-          <p>{siteConfig.affiliateDisclaimer}</p>
-        </div>
+        <p className="mb-10 flex gap-2.5 border-b pb-8 text-sm text-muted-foreground">
+          <Info className="mt-0.5 size-4 shrink-0" aria-hidden />
+          {siteConfig.outboundLinksEnabled
+            ? siteConfig.affiliateDisclaimer
+            : "Versão de demonstração: produtos e lojas de exemplo, preços ilustrativos e nenhum link de compra ativo. Quando houver links de afiliado, isso será informado aqui e em cada oferta."}
+        </p>
         <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-4">
           <div className="space-y-3">
             <SiteLogo />
             <p className="text-sm text-muted-foreground">
-              Comparação honesta: a oferta mais barata por kg aparece primeiro, pague ela comissão ou não.
+              Compare o preço da mesma embalagem de ração em lojas que atendem Curitiba e região.
             </p>
           </div>
           <FooterColumn title="Navegue" links={mainNav} />

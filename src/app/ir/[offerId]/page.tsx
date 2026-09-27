@@ -31,21 +31,35 @@ export default async function OutboundPage({ params }: PageProps<"/ir/[offerId]"
   const target = await getOutboundTarget(decodeURIComponent(offerId));
   if (!target) notFound();
   const isDev = process.env.NODE_ENV !== "production";
+  const linksEnabled = siteConfig.outboundLinksEnabled;
 
   return (
     <div className="mx-auto max-w-xl px-4 py-16 text-center">
-      <p className="text-sm font-semibold text-muted-foreground">Você será redirecionado para</p>
+      <p className="text-sm font-semibold text-muted-foreground">
+        {linksEnabled ? "Você será redirecionado para" : "Oferta ilustrativa em"}
+      </p>
       <h1 className="mt-2 flex justify-center text-3xl font-black">
         <StoreMark store={target.store} />
       </h1>
       <p className="mt-3 text-muted-foreground">
         {target.productName} · <strong className="text-foreground">{formatBRL(target.price)}</strong> na última verificação
       </p>
-      <Button asChild size="lg" className="mt-8">
-        <a href={target.affiliate.url} rel="sponsored nofollow noopener">
-          Continuar para a loja <ArrowRight />
-        </a>
-      </Button>
+      {linksEnabled ? (
+        <Button asChild size="lg" className="mt-8">
+          <a href={target.affiliate.url} rel="sponsored nofollow noopener">
+            Continuar para a loja <ArrowRight />
+          </a>
+        </Button>
+      ) : (
+        <>
+          <Button size="lg" variant="outline" className="mt-8" disabled>
+            Link da loja em breve
+          </Button>
+          <p className="mt-3 text-sm text-muted-foreground">
+            Nesta demonstração os preços são ilustrativos e ainda não há links de compra ativos.
+          </p>
+        </>
+      )}
       <p className="mx-auto mt-6 flex max-w-md items-start gap-2 text-left text-xs text-muted-foreground">
         <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
         {siteConfig.affiliateDisclaimer}

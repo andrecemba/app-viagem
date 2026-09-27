@@ -1,4 +1,5 @@
 import type { AffiliateResult } from "@/lib/affiliate";
+import type { ComparatorItem } from "@/lib/comparator/types";
 import type { FunnelDimension, FunnelSelection, OfferFilters } from "@/lib/funnel/filters";
 import type { OfferBadge } from "@/lib/pricing/badges";
 import type { UnitPrice } from "@/lib/pricing/unitPrice";
@@ -120,4 +121,6 @@ export interface DataSource {
   getOutboundTarget(offerId: string): Promise<OutboundTarget | null>;
   getCalculatorProducts(): Promise<CalculatorProduct[]>;
   getProductSlugs(): Promise<string[]>;
+  /** Catálogo da home: uma entrada por embalagem exata, com as ofertas já ordenadas. */
+  getComparatorItems(): Promise<ComparatorItem[]>;
 }

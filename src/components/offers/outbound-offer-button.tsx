@@ -3,6 +3,7 @@
 import { ExternalLink } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { siteConfig } from "@/config/site";
 import { cn } from "@/lib/utils";
 
 import { outboundLinkProps } from "./outbound";
@@ -28,6 +29,14 @@ export function OutboundOfferButton({
   className?: string;
 }) {
   const openDrawer = useRelatedDrawer();
+  if (!siteConfig.outboundLinksEnabled) {
+    // Sem links de afiliado ativos: o botão não finge levar à loja.
+    return (
+      <Button size={size} variant="outline" className={cn(className)} disabled title="Links de compra ainda não estão ativos">
+        Link da loja em breve
+      </Button>
+    );
+  }
   return (
     <Button asChild size={size} variant={variant} className={cn(className)}>
       <a

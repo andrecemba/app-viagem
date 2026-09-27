@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, Nunito } from "next/font/google";
+import { Inter, Montserrat } from "next/font/google";
 
 import { MockDataBanner } from "@/components/layout/mock-banner";
 import { SiteFooter } from "@/components/layout/site-footer";
@@ -11,7 +11,7 @@ import { siteConfig } from "@/config/site";
 import "./globals.css";
 
 const inter = Inter({ variable: "--font-inter", subsets: ["latin"] });
-const nunito = Nunito({ variable: "--font-nunito", subsets: ["latin"], weight: ["600", "700", "800", "900"] });
+const montserrat = Montserrat({ variable: "--font-montserrat", subsets: ["latin"], weight: ["500", "600", "700", "800"] });
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteConfig.url),
@@ -28,14 +28,14 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#fbf8f4" },
-    { media: "(prefers-color-scheme: dark)", color: "#221c18" },
+    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
+    { media: "(prefers-color-scheme: dark)", color: "#131417" },
   ],
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="pt-BR" suppressHydrationWarning className={`${inter.variable} ${nunito.variable}`}>
+    <html lang="pt-BR" suppressHydrationWarning className={`${inter.variable} ${montserrat.variable}`}>
       <body className="flex min-h-dvh flex-col">
         <ThemeProvider>
           <RelatedDrawerProvider>

@@ -24,7 +24,7 @@ interface ProductSeed {
   refinements?: RefinementSlug[];
   grams: number;
   units?: number;
-  /** Agrupa embalagens do mesmo produto; padrão = slug do nome sem o peso. */
+  /** Agrupa embalagens do mesmo produto; padrão = slug do nome + sabor (sem o peso). */
   group?: string;
   /** Sem tabela de consumo cadastrada (a calculadora pede a quantidade manualmente). */
   noFeedingTable?: boolean;
@@ -89,6 +89,28 @@ const seeds: ProductSeed[] = [
   { brand: "royal-canin", line: "feline-health-nutrition", name: "Royal Canin Sachê Sterilised 85 g (caixa com 12)", species: "gatos", type: "racao-umida", stages: ["castrado", "adulto"], segment: "super-premium", flavor: "Frango", grams: 1020, units: 12 },
   { brand: "dreamies", line: "dreamies", name: "Dreamies Petisco Queijo (3 × 40 g)", species: "gatos", type: "petiscos", stages: ["adulto"], segment: "standard", flavor: "Queijo", grams: 120, units: 3 },
   { brand: "royal-canin", line: "veterinary-diet", name: "Royal Canin Veterinary Urinary S/O Gatos", species: "gatos", type: "dietas-veterinarias", format: "dry", stages: ["adulto"], segment: "super-premium", flavor: "Frango", grams: 7500, noFeedingTable: true },
+  // ── Embalagens adicionais (acrescentadas no fim para não mudar os ids acima) ──
+  // Várias embalagens do mesmo produto e sabores diferentes da mesma linha, para
+  // testar que cada peso vira um item próprio no comparador.
+  { brand: "royal-canin", line: "size-health-nutrition", name: "Royal Canin Mini Adult", species: "caes", type: "racao-seca", stages: ["adulto"], sizes: ["mini", "pequeno"], segment: "super-premium", flavor: "Frango", grams: 1000, group: "royal-canin-mini-adult" },
+  { brand: "royal-canin", line: "size-health-nutrition", name: "Royal Canin Mini Puppy", species: "caes", type: "racao-seca", stages: ["filhote"], sizes: ["mini", "pequeno"], segment: "super-premium", flavor: "Frango", grams: 2500 },
+  { brand: "golden", line: "formula", name: "Golden Fórmula Adultos", species: "caes", type: "racao-seca", stages: ["adulto"], sizes: ["medio", "grande"], segment: "premium", flavor: "Frango e arroz", grams: 20000, group: "golden-formula-adultos" },
+  { brand: "golden", line: "formula", name: "Golden Fórmula Adultos", species: "caes", type: "racao-seca", stages: ["adulto"], sizes: ["medio", "grande"], segment: "premium", flavor: "Carne e arroz", grams: 15000 },
+  { brand: "golden", line: "formula", name: "Golden Fórmula Adultos", species: "caes", type: "racao-seca", stages: ["adulto"], sizes: ["medio", "grande"], segment: "premium", flavor: "Carne e arroz", grams: 3000 },
+  { brand: "golden", line: "formula", name: "Golden Fórmula Mini Bits Adultos", species: "caes", type: "racao-seca", stages: ["adulto"], sizes: ["mini", "pequeno"], segment: "premium", flavor: "Carne e arroz", grams: 1000 },
+  { brand: "golden", line: "gatos", name: "Golden Gatos Castrados", species: "gatos", type: "racao-seca", stages: ["castrado", "adulto"], segment: "premium", flavor: "Frango", grams: 3000 },
+  { brand: "golden", line: "gatos", name: "Golden Gatos Castrados", species: "gatos", type: "racao-seca", stages: ["castrado", "adulto"], segment: "premium", flavor: "Frango", grams: 1000 },
+  { brand: "golden", line: "gatos", name: "Golden Gatos Castrados", species: "gatos", type: "racao-seca", stages: ["castrado", "adulto"], segment: "premium", flavor: "Salmão", grams: 10100 },
+  { brand: "premier", line: "gatos-castrados", name: "PremieR Gatos Castrados", species: "gatos", type: "racao-seca", stages: ["castrado", "adulto"], segment: "premium", flavor: "Salmão", grams: 1500 },
+  { brand: "royal-canin", line: "feline-health-nutrition", name: "Royal Canin Sterilised Gatos Castrados", species: "gatos", type: "racao-seca", stages: ["castrado", "adulto"], segment: "super-premium", flavor: "Frango", grams: 1500 },
+  { brand: "whiskas", line: "seca", name: "Whiskas Gatos Adultos Carne", species: "gatos", type: "racao-seca", stages: ["adulto"], segment: "economica", flavor: "Carne", grams: 2700 },
+  { brand: "special-dog", line: "premium", name: "Special Dog Adultos", species: "caes", type: "racao-seca", stages: ["adulto"], sizes: ["medio", "grande"], segment: "economica", flavor: "Carne", grams: 10100 },
+  { brand: "formula-natural", line: "fresh-meat", name: "Formula Natural Fresh Meat Adulto Mini e Pequeno", species: "caes", type: "racao-seca", stages: ["adulto"], sizes: ["mini", "pequeno"], segment: "super-premium", flavor: "Frango", refinements: ["sem-corante", "pele-sensivel"], grams: 2500 },
+  { brand: "guabi-natural", line: "guabi-natural", name: "Guabi Natural Gatos Castrados", species: "gatos", type: "racao-seca", stages: ["castrado", "adulto"], segment: "super-premium", flavor: "Salmão e cevada", refinements: ["sem-corante"], grams: 1500 },
+  { brand: "guabi-natural", line: "guabi-natural", name: "Guabi Natural Adulto Raças Grandes e Gigantes", species: "caes", type: "racao-seca", stages: ["adulto"], sizes: ["grande"], segment: "super-premium", flavor: "Frango e arroz integral", refinements: ["sem-corante"], grams: 15000 },
+  { brand: "royal-canin", line: "veterinary-diet", name: "Royal Canin Veterinary Urinary S/O Gatos", species: "gatos", type: "dietas-veterinarias", format: "dry", stages: ["adulto"], segment: "super-premium", flavor: "Frango", grams: 1500, noFeedingTable: true },
+  { brand: "hills", line: "prescription-diet", name: "Hill's Prescription Diet c/d Gatos", species: "gatos", type: "dietas-veterinarias", format: "dry", stages: ["adulto"], segment: "super-premium", flavor: "Frango", grams: 1800, noFeedingTable: true },
+  { brand: "royal-canin", line: "veterinary-diet", name: "Royal Canin Veterinary Renal Cães", species: "caes", type: "dietas-veterinarias", format: "dry", stages: ["adulto", "senior"], segment: "super-premium", flavor: "Frango", grams: 2000, noFeedingTable: true },
 ];
 
 export function slugify(value: string) {
@@ -129,11 +151,16 @@ function buildFeedingTable(species: SpeciesSlug, segment: SegmentSlug, stages: L
   }));
 }
 
+const usedSlugs = new Set<string>();
+
 export const products: Product[] = seeds.map((s, index) => {
   const format = s.format ?? defaultFormat(s.type);
   const isWeightInName = s.units != null;
   const fullName = isWeightInName ? s.name : `${s.name} ${formatGrams(s.grams)}`;
-  const slug = slugify(fullName);
+  // Mesma linha e peso com sabores diferentes: o sabor entra no slug para mantê-lo único.
+  let slug = slugify(fullName);
+  if (usedSlugs.has(slug)) slug = slugify(`${fullName} ${s.flavor}`);
+  usedSlugs.add(slug);
   return {
     id: `pr-${String(index + 1).padStart(3, "0")}`,
     slug,
@@ -152,7 +179,7 @@ export const products: Product[] = seeds.map((s, index) => {
     netWeightGrams: s.grams,
     unitCount: s.units ?? null,
     ean: index % 4 === 0 ? null : `789${String(1000000000 + index * 7919).slice(0, 10)}`,
-    variantGroup: s.group ?? slug,
+    variantGroup: s.group ?? slugify(`${s.name} ${s.flavor}`),
     feedingTable:
       format === "dry" && s.type !== "dietas-veterinarias" && !s.noFeedingTable
         ? buildFeedingTable(s.species, s.segment, s.stages)

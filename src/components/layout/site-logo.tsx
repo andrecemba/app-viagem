@@ -1,15 +1,14 @@
 import Link from "next/link";
-import { PawPrint } from "lucide-react";
 
+import { REGION_LABEL } from "@/config/comparator";
 import { siteConfig } from "@/config/site";
 
+/** Marca tipográfica: nome em Montserrat e a região ao lado (oculta em telas estreitas). */
 export function SiteLogo() {
   return (
-    <Link href="/" className="flex items-center gap-2 rounded-xl font-display text-lg font-extrabold tracking-tight">
-      <span className="flex size-9 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
-        <PawPrint className="size-5" aria-hidden />
-      </span>
-      {siteConfig.name}
+    <Link href="/" className="flex items-baseline gap-2.5 rounded-md">
+      <span className="font-display text-[1.0625rem] font-bold tracking-tight">{siteConfig.name}</span>
+      <span className="hidden border-l pl-2.5 text-xs text-muted-foreground sm:inline">{REGION_LABEL}</span>
     </Link>
   );
 }

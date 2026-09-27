@@ -7,7 +7,10 @@ import {
   mergeAffiliateConfig,
   type AffiliateTagCategory,
 } from "@/lib/affiliate";
+import { NATURAL_BRANDS } from "@/config/comparator";
 import { PACKAGE_RANGES } from "@/config/taxonomy";
+import type { ComparatorItem, ComparatorOffer, FoodKind } from "@/lib/comparator/types";
+import { formatWeight } from "@/lib/format";
 import type { FunnelDimension, FunnelSelection, OfferFilters } from "@/lib/funnel/filters";
 import { computeOfferBadges } from "@/lib/pricing/badges";
 import { rankOffersHonestly } from "@/lib/pricing/rankOffers";
@@ -150,6 +153,70 @@ function relatedFor(product: Product, storeId?: string, sameStoreOnly = false, l
     store: storeById.get(r.offer.storeId)!,
     sameStore: r.sameStore,
   }));
+}
+
+const STORE_KIND: Record<Store["type"], ComparatorOffer["storeKind"]> = {
+  marketplace: "Marketplace",
+  pet_store: "Pet shop",
+  supermarket: "Supermercado",
+};
+
+function kindOf(product: Product): FoodKind | null {
+  if (product.foodType === "petiscos") return null;
+  if (product.foodType === "dietas-veterinarias") return "medicamentosa";
+  if (product.foodType === "racao-umida") return "umida";
+  return NATURAL_BRANDS.has(brandById.get(product.brandId)!.slug) ? "natural" : "seca";
+}
+
+/** Nome da fórmula sem o peso que o seed acrescenta ao final. */
+function titleOf(product: Product) {
+  const suffix = ` ${formatWeight(product.netWeightGrams)}`;
+  return product.unitCount == null && product.name.endsWith(suffix) ? product.name.slice(0, -suffix.length) : product.name;
+}
+
+function comparatorItemFor(product: Product): ComparatorItem | null {
+  const kind = kindOf(product);
+  const productOffers = offersByProduct.get(product.id) ?? [];
+  if (!kind || !productOffers.length) return null;
+  const brand = brandById.get(product.brandId)!;
+  const sorted = [...productOffers].sort((a, b) => Number(b.inStock) - Number(a.inStock) || a.price - b.price);
+  const available = sorted.filter((o) => o.inStock);
+  if (!available.length) return null;
+  return {
+    id: product.id,
+    slug: product.slug,
+    family: product.variantGroup,
+    brand: { slug: brand.slug, name: brand.name, color: brand.color, initials: brand.initials },
+    lineName: lineById.get(product.lineId)?.name ?? "",
+    title: titleOf(product),
+    species: product.species,
+    kind,
+    format: product.format,
+    lifeStages: product.lifeStages,
+    sizes: product.sizes,
+    flavor: product.flavor,
+    netWeightGrams: product.netWeightGrams,
+    unitCount: product.unitCount,
+    // Nenhuma foto oficial verificada nos dados de exemplo.
+    photoUrl: null,
+    offers: sorted.map((o) => {
+      const store = storeById.get(o.storeId)!;
+      return {
+        id: o.id,
+        storeName: store.name,
+        storeColor: store.color,
+        storeKind: STORE_KIND[store.type],
+        sellerName: o.sellerName,
+        price: o.price,
+        pixPrice: o.pixPrice,
+        freeShipping: o.freeShipping,
+        inStock: o.inStock,
+        lastCheckedAt: o.lastCheckedAt,
+      };
+    }),
+    bestPrice: available[0].price,
+    storeCount: available.length,
+  };
 }
 
 /** Simula latência de rede para exercitar os estados de carregamento. */
@@ -349,5 +416,9 @@ export const mockSource: DataSource = {
 
   async getProductSlugs() {
     return products.map((p) => p.slug);
+  },
+
+  async getComparatorItems() {
+    return products.map(comparatorItemFor).filter((i): i is ComparatorItem => i !== null);
   },
 };

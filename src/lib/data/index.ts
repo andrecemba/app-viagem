@@ -23,5 +23,6 @@ export const getMonthlyKit = source.getMonthlyKit;
 export const getOutboundTarget = source.getOutboundTarget;
 export const getCalculatorProducts = source.getCalculatorProducts;
 export const getProductSlugs = source.getProductSlugs;
+export const getComparatorItems = source.getComparatorItems;
 
 export type * from "./types";
