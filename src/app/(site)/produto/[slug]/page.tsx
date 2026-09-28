@@ -78,7 +78,7 @@ export default async function ProductPage({ params }: PageProps<"/produto/[slug]
   };
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-6">
+    <div className="mx-auto max-w-7xl px-4 py-6">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, "\\u003c") }} />
       <TrackView id={item.id} slug={item.slug} />
       <nav aria-label="Trilha" className="mb-6 flex flex-wrap items-center gap-1 text-sm text-muted-foreground">
@@ -95,9 +95,9 @@ export default async function ProductPage({ params }: PageProps<"/produto/[slug]
         </Link>
       </nav>
 
-      <div className="grid gap-6 md:grid-cols-[minmax(0,240px)_1fr] lg:grid-cols-[220px_minmax(0,1fr)_300px] lg:gap-8">
+      <div className="grid gap-6 md:grid-cols-[minmax(0,320px)_1fr] lg:grid-cols-[440px_minmax(0,1fr)_300px] lg:gap-8">
         <div className="md:row-span-2 lg:row-span-1">
-          <PackagePhoto item={item} className="mx-auto aspect-square w-full max-w-[11rem] md:max-w-none" />
+          <PackagePhoto item={item} className="mx-auto aspect-square w-full max-w-[22rem] md:max-w-none" />
         </div>
         <div className="min-w-0">
           <p className="flex items-center gap-2 text-sm font-semibold text-muted-foreground">
