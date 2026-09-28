@@ -55,6 +55,11 @@ describe("catálogo do Mercado Livre → planilha", () => {
     expect(catalogRow(product("Ração Premier", { BRAND: "Premier", RECOMMENDED_PET: "Cães", PET_LIFE_STAGE: "Adultos" }))).toEqual({ skip: "sem peso da embalagem" });
     expect(catalogRow(product("Ração Golden 15kg", { BRAND: "Golden", NET_WEIGHT: "15 kg", PET_LIFE_STAGE: "Adultos" }))).toEqual({ skip: "espécie (cão ou gato) não definida" });
     expect(catalogRow({ ...trusty, domain_id: "MLB-PET_SNACKS" })).toEqual({ skip: "não é ração" });
+    expect(catalogRow({ ...trusty, name: "Petisco Golden Cookie Cães Adultos 400g" })).toEqual({ skip: "petisco" });
+    expect(catalogRow(product("Ração Úmida Golden Gatos Castrados Sachê Frango 85g", { BRAND: "Golden", RECOMMENDED_PET: "Gatos", PET_LIFE_STAGE: "Adultos", NET_WEIGHT: "85 g" }))).toEqual({
+      skip: "ração úmida (sachê, lata, patê)",
+    });
+    expect(catalogRow(product("Golden Gatos Frango 10.1kg", { BRAND: "Golden", RECOMMENDED_PET: "Gatos", PET_LIFE_STAGE: "Adultos", NET_WEIGHT: "10.1 kg", PET_FOOD_TYPE: "Úmido" }))).toMatchObject({ skip: expect.stringContaining("úmida") });
   });
 
   it("a planilha gerada importa direto, com o link da página de catálogo", async () => {

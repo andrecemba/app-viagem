@@ -9,6 +9,8 @@ import { normalizeText, weightFromTitle } from "@/lib/domain/validation";
  */
 
 export const FOOD_DOMAIN = "MLB-CAT_AND_DOG_FOODS";
+/** Por enquanto o site só recebe ração seca: úmida (sachê, lata, patê) fica de fora. */
+export const SKIP_WET = true;
 export const CATALOG_COLUMNS = ["nome_mercado_livre", ...IMPORT_COLUMNS] as const;
 
 export interface MlCatalogProduct {
@@ -89,6 +91,8 @@ export function catalogRow(p: MlCatalogProduct): { row: CatalogRow } | { skip: s
   const attr = (id: string) => p.attributes?.find((a) => a.id === id)?.value_name?.trim() || "";
   const name = normalizeText(p.name);
 
+  if (/\b(petiscos?|snacks?|bifinhos?|biscoitos?|ossinhos?|palitos?)\b/.test(name)) return { skip: "petisco" };
+
   const units = Number(attr("UNITS_PER_PACK") || "1");
   if (units > 1 || /\bkit\b/.test(normalizeText(attr("SALE_FORMAT")))) return { skip: "kit com várias embalagens" };
 
@@ -109,7 +113,8 @@ export function catalogRow(p: MlCatalogProduct): { row: CatalogRow } | { skip: s
   const indication = [life ? LIFE_LABEL[life] : null, size ? SIZE_LABEL[size] : null, neutered ? "Castrados" : null].filter(Boolean).join(" ");
   const flavorRaw = attr("FLAVOR");
   const flavor = /^(sem sabor|nao se aplica|nao aplica|n a|sabor unico|original)$/.test(normalizeText(flavorRaw)) ? "" : flavorRaw;
-  const foodType = foodTypeOf(normalizeText(attr("PET_FOOD_TYPE")));
+  const foodType = foodTypeOf(normalizeText(attr("PET_FOOD_TYPE"))) ?? (/\b(sache|saches|lata|pate|umida)\b/.test(name) ? "umida" : null);
+  if (SKIP_WET && foodType === "umida") return { skip: "ração úmida (sachê, lata, patê)" };
 
   return {
     row: {
@@ -144,6 +149,8 @@ export function toCsv(rows: CatalogRow[]): string {
 
 export interface LinkEntry {
   position: number;
+  /** Outro sabor ou peso da ração mais vendida logo acima. */
+  variant?: boolean;
   name: string;
   imageUrl: string | null;
   pageUrl: string;
@@ -167,8 +174,8 @@ export function linksPage(title: string, groups: { title: string; entries: LinkE
       const items = g.entries
         .map((e) => {
           const idx = e.row ? n++ : -1;
-          return `<li class="${e.row ? "" : "off"}">
-  <span class="pos">${e.position}º</span>
+          return `<li class="${[e.row ? "" : "off", e.variant ? "var" : ""].join(" ").trim()}">
+  <span class="pos">${e.variant ? "↳" : `${e.position}º`}</span>
   ${e.imageUrl ? `<img src="${esc(e.imageUrl)}" alt="" loading="lazy">` : `<span class="noimg"></span>`}
   <div class="info">
     <b>${esc(e.name)}</b>
@@ -192,6 +199,7 @@ h1{font-size:1.4rem}h2{margin-top:2rem;font-size:1.15rem}
 ol{list-style:none;padding:0;margin:0}
 li{display:flex;gap:12px;align-items:flex-start;background:#fff;border:1px solid #ddd;border-radius:10px;padding:10px;margin:8px 0}
 li.off{opacity:.55}
+li.var{margin-left:2.6rem}
 .pos{font-weight:700;font-size:1.1rem;min-width:2.2rem}
 img,.noimg{width:72px;height:72px;object-fit:contain;flex:none;background:#fafafa}
 .info{display:flex;flex-direction:column;gap:6px;flex:1;min-width:0}

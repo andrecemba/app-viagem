@@ -378,6 +378,50 @@ async function foodCategory(ml: MercadoLivreSource, species: "caes" | "gatos"): 
   }
 }
 
+type MlProduct = MlCatalogProduct & {
+  pictures?: { url?: string }[];
+  parent_id?: string | null;
+  children_ids?: string[];
+  pickers?: { picker_name?: string; products?: { product_id?: string }[] }[] | null;
+};
+
+/**
+ * A ração e as outras versões dela (sabores e pesos): segue os seletores da
+ * página de catálogo (os botões “Sabor”, “Peso líquido”…) e, se não houver,
+ * os filhos do produto-pai. Cada versão é uma página própria no Mercado Livre.
+ */
+async function variations(ml: MercadoLivreSource, top: MlProduct, seen: Set<string>, max = 30): Promise<MlProduct[]> {
+  const out: MlProduct[] = [top];
+  seen.add(top.id!);
+  const queue: string[] = [];
+  const push = (p: MlProduct) => {
+    for (const k of p.pickers ?? []) for (const x of k.products ?? []) if (x.product_id && !seen.has(x.product_id)) queue.push(x.product_id);
+  };
+  push(top);
+  if (!queue.length && top.parent_id) {
+    try {
+      const parent = await ml.rawGet<MlProduct>(`/products/${top.parent_id}`);
+      for (const id of parent.children_ids ?? []) if (!seen.has(id)) queue.push(id);
+    } catch {
+      /* sem família */
+    }
+  }
+  while (queue.length && out.length < max) {
+    const id = queue.shift()!;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    try {
+      const p = await ml.rawGet<MlProduct>(`/products/${id}`);
+      if (!p.id) continue;
+      out.push(p);
+      push(p); // variação da variação: pega as combinações de sabor × peso
+    } catch {
+      /* versão que não abre: segue */
+    }
+  }
+  return [top, ...out.slice(1).sort((a, b) => (a.name ?? "").localeCompare(b.name ?? "", "pt-BR", { numeric: true }))];
+}
+
 async function maisVendidos(args: string[]) {
   const src = sources(getDb()).get("mercado-livre")!;
   if (src.status().state !== "ativa") {
@@ -397,6 +441,7 @@ async function maisVendidos(args: string[]) {
 
   const groups: { title: string; entries: LinkEntry[] }[] = [];
   const rows: CatalogRow[] = [];
+  const seen = new Set<string>();
   for (const species of ["caes", "gatos"] as const) {
     const label = species === "caes" ? "Cães" : "Gatos";
     const category = await foodCategory(ml, species);
@@ -423,35 +468,47 @@ async function maisVendidos(args: string[]) {
         noCatalog++; // anúncio avulso, sem página de catálogo: a API não deixa ler
         continue;
       }
-      let p: MlCatalogProduct & { pictures?: { url?: string }[] };
+      let top: MlProduct;
       try {
-        p = await ml.rawGet(`/products/${h.id}`);
+        top = await ml.rawGet(`/products/${h.id}`);
       } catch {
         noCatalog++;
         continue;
       }
-      const entry: LinkEntry = {
-        position: h.position ?? entries.length + 1,
-        name: p.name ?? h.id,
-        imageUrl: p.pictures?.[0]?.url?.replace(/^http:/, "https:") ?? null,
-        pageUrl: `https://www.mercadolivre.com.br/p/${h.id}`,
-        row: null,
-        note: null,
-      };
-      if (known.has(h.id)) entry.note = "Já está no site.";
-      else {
-        const r = catalogRow(p);
-        if ("row" in r) {
+      if (seen.has(h.id)) continue;
+      const topRow = catalogRow(top);
+      // Úmida, petisco etc. não entram nem contam entre as mais vendidas.
+      if ("skip" in topRow && !known.has(h.id)) {
+        console.log(`   ${h.position}º ${top.name ?? h.id}  → pulada: ${topRow.skip}`);
+        continue;
+      }
+      const family = await variations(ml, top, seen);
+      for (const [i, p] of family.entries()) {
+        const entry: LinkEntry = {
+          position: h.position ?? 0,
+          variant: i > 0,
+          name: p.name ?? p.id!,
+          imageUrl: p.pictures?.[0]?.url?.replace(/^http:/, "https:") ?? null,
+          pageUrl: `https://www.mercadolivre.com.br/p/${p.id}`,
+          row: null,
+          note: null,
+        };
+        const r = i === 0 ? topRow : catalogRow(p);
+        if (known.has(p.id!)) entry.note = "Já está no site.";
+        else if ("row" in r) {
           entry.row = r.row;
           rows.push(r.row);
-          ready++;
-        } else entry.note = `Fica de fora: ${r.skip}.`;
+        } else {
+          if (i > 0) continue; // variação que não serve (úmida, kit…): nem aparece
+          entry.note = `Fica de fora: ${r.skip}.`;
+        }
+        entries.push(entry);
+        console.log(`   ${i ? "     ↳" : `${entry.position}º`} ${entry.name}${entry.note ? `  → ${entry.note}` : ""}`);
       }
-      entries.push(entry);
-      console.log(`   ${entry.position}º ${entry.name}${entry.note ? `  → ${entry.note}` : ""}`);
+      ready++;
     }
     if (noCatalog) console.log(`   (${noCatalog} da lista são anúncios sem página de catálogo e foram pulados)`);
-    groups.push({ title: `${label}: mais vendidas (${ready} para importar)`, entries });
+    groups.push({ title: `${label}: ${ready} mais vendidas e seus outros sabores e pesos`, entries });
   }
 
   if (!rows.length) {
