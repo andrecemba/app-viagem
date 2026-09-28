@@ -33,7 +33,7 @@ export const INITIAL_STORES: (StoreInput & { id: string })[] = [
     id: "amazon",
     name: "Amazon",
     domains: ["amazon.com.br"],
-    affiliateDomains: ["amzn.to"],
+    affiliateDomains: ["amzn.to", "link.amazon"],
     mode: "api",
     adapter: "amazon",
     priceDisplay: "somente_api",
