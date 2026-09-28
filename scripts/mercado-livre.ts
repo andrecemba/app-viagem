@@ -32,40 +32,72 @@ async function conectar() {
     return;
   }
   // Uma única leitura do teclado para todas as perguntas (funciona também com texto colado de uma vez).
-  const rl = createInterface({ input: process.stdin, output: process.stdout, terminal: Boolean(process.stdin.isTTY) });
+  const tty = Boolean(process.stdin.isTTY);
+  const rl = createInterface({ input: process.stdin, output: process.stdout, terminal: tty });
   const lines = rl[Symbol.asyncIterator]();
-  const ask = async (q: string, def?: string) => {
-    process.stdout.write(def ? `${q} [${def}]: ` : `${q}: `);
-    const { value, done } = await lines.next();
-    if (!process.stdin.isTTY) process.stdout.write("\n");
-    return (done ? "" : String(value).trim()) || def || "";
+  // Chave secreta digitada/colada aparece como asteriscos.
+  let muted = false;
+  const internal = rl as unknown as { _writeToOutput?: (s: string) => void; output: NodeJS.WriteStream };
+  const write = internal._writeToOutput?.bind(rl);
+  if (write) internal._writeToOutput = (s: string) => (muted && !s.includes("\n") ? internal.output.write("*") : write(s));
+
+  /**
+   * Pergunta até vir uma resposta válida. Linhas vazias extras (comuns ao colar no
+   * Prompt de Comando do Windows) não passam para a pergunta seguinte: são ignoradas.
+   */
+  const ask = async (q: string, opts: { def?: string; hidden?: boolean; valid?: (v: string) => boolean; hint?: string } = {}): Promise<string | null> => {
+    for (;;) {
+      process.stdout.write(opts.def ? `${q} [${opts.def}]: ` : `${q}: `);
+      muted = Boolean(opts.hidden) && tty;
+      const { value, done } = await lines.next();
+      muted = false;
+      if (opts.hidden && tty) process.stdout.write("\n");
+      if (!tty) process.stdout.write("\n");
+      if (done) return null;
+      const v = String(value).trim() || opts.def || "";
+      if (!v) continue;
+      if (!opts.valid || opts.valid(v)) return v;
+      console.log(opts.hint ?? "Resposta inválida, tente de novo.");
+    }
+  };
+  const stop = (msg: string) => {
+    rl.close();
+    console.log(`\n${msg}`);
+    process.exitCode = 1;
   };
 
   console.log("\nConectar o Mercado Livre (API oficial)\n");
-  console.log("Você precisa do aplicativo criado em https://developers.mercadolivre.com.br (veja o guia, Parte 8).\n");
-  const clientId = await ask("Client ID (ID do aplicativo)", process.env.MERCADOLIVRE_CLIENT_ID || undefined);
-  const clientSecret = await ask("Client Secret (chave secreta)", process.env.MERCADOLIVRE_CLIENT_SECRET ? "manter a atual" : undefined);
-  const secret = clientSecret === "manter a atual" ? process.env.MERCADOLIVRE_CLIENT_SECRET! : clientSecret;
-  const redirectUri = await ask("URI de redirect (igual à do aplicativo)", process.env.MERCADOLIVRE_REDIRECT_URI || "https://www.google.com.br/");
-  if (!/^\d+$/.test(clientId) || !secret || !/^https:\/\//.test(redirectUri)) {
-    console.log("\nConfira: o Client ID tem só números, a chave secreta não pode ficar vazia e o redirect começa com https://.");
-    rl.close();
-    process.exitCode = 1;
-    return;
-  }
+  console.log("Você precisa do aplicativo criado em https://developers.mercadolivre.com.br (veja o guia, Parte 8).");
+  console.log("Para desistir a qualquer momento: Ctrl+C.\n");
+  const clientId = await ask("Client ID (ID do aplicativo)", {
+    def: process.env.MERCADOLIVRE_CLIENT_ID || undefined,
+    valid: (v) => /^\d+$/.test(v),
+    hint: "O Client ID tem só números. Copie de novo da página do aplicativo.",
+  });
+  if (!clientId) return stop("Cancelado.");
+  const keep = process.env.MERCADOLIVRE_CLIENT_SECRET ? "Enter mantém a atual" : undefined;
+  const typed = await ask("Client Secret (chave secreta — aparece como ***)", { def: keep, hidden: true });
+  if (!typed) return stop("Cancelado.");
+  const secret = typed === keep ? process.env.MERCADOLIVRE_CLIENT_SECRET! : typed;
+  const redirectUri = await ask("URI de redirect (igual à do aplicativo; Enter aceita)", {
+    def: process.env.MERCADOLIVRE_REDIRECT_URI || "https://www.google.com.br/",
+    valid: (v) => /^https:\/\//.test(v),
+    hint: "O redirect começa com https:// (o mesmo cadastrado no aplicativo).",
+  });
+  if (!redirectUri) return stop("Cancelado.");
 
   const link = `${AUTH_URL}?${new URLSearchParams({ response_type: "code", client_id: clientId, redirect_uri: redirectUri })}`;
   console.log("\n1) Abra este link no navegador, entre na sua conta do Mercado Livre e clique em Permitir:\n");
   console.log(`   ${link}\n`);
-  console.log("2) O navegador vai para outra página. Copie o endereço inteiro da barra (tem ?code=TG-…).\n");
-  const pasted = await ask("Cole aqui o endereço (ou só o código TG-…)");
+  console.log("2) O navegador vai para o Google. Copie o endereço inteiro da barra (tem ?code=TG-…),");
+  console.log("   volte para esta janela, cole (botão direito do mouse) e aperte Enter.\n");
+  const pasted = await ask("Cole aqui o endereço (ou só o código TG-…)", {
+    valid: (v) => codeFromRedirect(v) != null,
+    hint: "Não achei o código (começa com TG-). Copie o endereço inteiro da barra do navegador e cole de novo.",
+  });
   rl.close();
-  const code = codeFromRedirect(pasted);
-  if (!code) {
-    console.log("\nNão encontrei o código (começa com TG-). Rode npm run ml:conectar de novo; o código vale só alguns minutos.");
-    process.exitCode = 1;
-    return;
-  }
+  const code = pasted ? codeFromRedirect(pasted) : null;
+  if (!code) return stop("Cancelado. Rode npm run ml:conectar de novo; o código vale só alguns minutos.");
 
   const res = await fetch(TOKEN_URL, {
     method: "POST",
