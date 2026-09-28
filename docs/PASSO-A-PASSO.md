@@ -21,7 +21,8 @@ e cadastrar 3 rações com o preço e o link do Mercado Livre.
 
 ### 2. Abra o terminal
 
-- **Windows**: aperte a tecla **Windows**, digite **PowerShell** e abra o programa.
+- **Windows**: aperte a tecla **Windows**, digite **cmd** e abra o **Prompt de Comando**.
+  (Evite o PowerShell: ele pode bloquear o `npm` com a mensagem “a execução de scripts foi desabilitada”.)
 - **Mac**: aperte **Cmd + Espaço**, digite **Terminal** e abra.
 
 Para conferir se o Node.js foi instalado, digite o comando abaixo e aperte **Enter**:
@@ -33,13 +34,17 @@ node -v
 Deve aparecer algo como `v22.…`. Se aparecer “não é reconhecido” ou “command not found”, feche o terminal,
 abra de novo e tente outra vez (se continuar, reinstale o Node.js).
 
-### 3. Baixe o site
+### 3. Baixe o site (versão certa)
 
-1. No GitHub, abra o repositório **andrecemba/app-viagem**.
-2. No botão que mostra o nome do ramo (normalmente **main**), escolha **claude/bold-turing-6vq203**
-   (depois que a PR for aprovada, pode usar o **main**).
-3. Clique no botão verde **Code** → **Download ZIP**.
-4. Descompacte o arquivo (clique com o botão direito → **Extrair tudo**) numa pasta fácil, como **Documentos**.
+1. Baixe o arquivo ZIP por este link direto (já é a versão certa):
+   **https://github.com/andrecemba/app-viagem/archive/refs/heads/claude/bold-turing-6vq203.zip**
+2. Crie uma pasta **fora do OneDrive**, por exemplo **C:\Projetos**.
+   O OneDrive fica sincronizando os milhares de arquivos que o site instala e pode travar a instalação ou o banco de dados.
+3. Descompacte o ZIP nessa pasta (botão direito → **Extrair tudo**).
+4. Confira se é a versão certa: dentro da pasta extraída tem que existir as pastas **db**, **docs** e **scripts**,
+   além de **src** e **tests**. Se não tiver essas três, você baixou uma versão antiga: apague e baixe pelo link acima.
+
+> O ZIP cria uma pasta com nome comprido, como `app-viagem-claude-bold-turing-6vq203`. A pasta certa é a que tem o arquivo **package.json**.
 
 ### 4. Entre na pasta do site pelo terminal
 
@@ -47,8 +52,10 @@ No terminal, digite `cd` e um **espaço**, depois **arraste a pasta do site** (a
 para dentro da janela do terminal. O caminho aparece sozinho. Aperte **Enter**.
 
 ```
-cd C:\Users\voce\Documents\app-viagem-claude-bold-turing-6vq203
+cd /d "C:\Projetos\app-viagem-claude-bold-turing-6vq203"
 ```
+
+(No Prompt de Comando do Windows, o `/d` permite trocar de disco e as aspas aceitam espaços no nome.)
 
 (O seu caminho vai ser diferente. Tudo bem.)
 
@@ -216,6 +223,9 @@ site de desenvolvedores do Mercado Livre). Os passos técnicos estão no `README
 | O que aparece | O que fazer |
 |---|---|
 | `npm` ou `node` “não é reconhecido” | Feche e abra o terminal. Se continuar, reinstale o Node.js (Parte 1). |
+| “Missing script: configurar” ou “db:zerar” | A pasta é de uma versão antiga. Baixe de novo pelo link do passo 3 e confira as pastas **db**, **docs** e **scripts**. |
+| “a execução de scripts foi desabilitada neste sistema” | Você está no PowerShell. Use o **Prompt de Comando** (cmd). |
+| Erros de “EPERM” ou “arquivo em uso” no `npm install` | A pasta está no OneDrive. Mova para `C:\Projetos` e rode `npm install` de novo. |
 | “A URL não é de Mercado Livre” | O link precisa ser do anúncio (`mercadolivre.com.br`). Links curtos de compartilhamento (`meli.la`) vão no campo **Link de afiliado**, não no da URL. |
 | “O link de afiliado não é de Mercado Livre…” | Confira se colou o link de afiliado do Mercado Livre, e não de outra loja. |
 | “Já existe um produto com a mesma espécie, marca…” | A ração já está cadastrada. Abra a existente e adicione a oferta nela. |
