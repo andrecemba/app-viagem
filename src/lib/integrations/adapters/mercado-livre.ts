@@ -78,7 +78,10 @@ export function codeFromRedirect(input: string): string | null {
   return null;
 }
 
-export function createMercadoLivreSource(deps: MercadoLivreDeps): OfferSource {
+/** Fonte do Mercado Livre com acesso de leitura bruto, usado só no diagnóstico (npm run ml:testar). */
+export type MercadoLivreSource = OfferSource & { rawGet<T>(path: string): Promise<T> };
+
+export function createMercadoLivreSource(deps: MercadoLivreDeps): MercadoLivreSource {
   const { env, fetchImpl, tokenStore } = deps;
   const source = "mercado-livre";
   let accessToken: { value: string; expires: number } | null = null;
@@ -113,6 +116,7 @@ export function createMercadoLivreSource(deps: MercadoLivreDeps): OfferSource {
   }
 
   return {
+    rawGet: get,
     id: source,
     label: "Mercado Livre (API oficial)",
     kind: "api",

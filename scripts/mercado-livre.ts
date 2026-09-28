@@ -8,10 +8,9 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 
 import { getDb } from "../src/lib/db";
-import { codeFromRedirect, parseMercadoLivreUrl } from "../src/lib/integrations/adapters/mercado-livre";
+import { codeFromRedirect, parseMercadoLivreUrl, type MercadoLivreSource } from "../src/lib/integrations/adapters/mercado-livre";
 import { redact } from "../src/lib/integrations/http";
 import { sources } from "../src/lib/integrations";
-import { IntegrationError } from "../src/lib/integrations/types";
 
 const ENV_FILE = ".env.local";
 if (existsSync(ENV_FILE)) process.loadEnvFile(ENV_FILE);
@@ -162,9 +161,26 @@ async function testar(arg: string | undefined, cep: string | undefined) {
     return;
   }
 
-  console.log(`\nConsultando ${id} na API oficial do Mercado Livre…\n`);
+  const ml = src as MercadoLivreSource;
+
+  // 1) A chave funciona? (/users/me só depende do token)
+  console.log("\n1) Conferindo a conexão da conta…");
+  try {
+    const me = await ml.rawGet<{ id?: number; nickname?: string }>("/users/me");
+    console.log(`   OK: conectado como ${me.nickname ?? "?"} (conta ${me.id ?? "?"}).`);
+  } catch (e) {
+    console.log(`   Falhou: ${redact(e instanceof Error ? e.message : String(e))}`);
+    console.log("   A conexão não está valendo. Rode npm run ml:conectar de novo.");
+    process.exitCode = 1;
+    return;
+  }
+
+  // 2) O anúncio do vendedor
+  console.log(`\n2) Consultando o anúncio ${id}…\n`);
+  let itemOk = false;
   try {
     const l = await src.fetchListing!(id);
+    itemOk = true;
     console.log(`Título:          ${l.title ?? "(não informado)"}`);
     console.log(`Preço:           ${l.price != null ? brl(l.price) : "(sem preço)"}`);
     console.log(`Disponível:      ${l.availability === "disponivel" ? "sim" : "não"}`);
@@ -174,21 +190,42 @@ async function testar(arg: string | undefined, cep: string | undefined) {
     console.log(`Link:            ${l.url ?? "(não informado)"}`);
     if (cep) {
       const digits = cep.replace(/\D/g, "");
-      const q = await src.quoteShipping!(id, digits);
-      console.log(`Frete p/ ${digits}: ${q.cost === 0 ? "grátis" : brl(q.cost)}${q.deadlineDays != null ? `, cerca de ${q.deadlineDays} dia(s)` : ""}`);
-    }
-    console.log("\nA API está funcionando. No painel, a Nova oferta desse anúncio mostra o botão “Buscar dados do anúncio pela API”.\n");
-  } catch (e) {
-    if (e instanceof IntegrationError) {
-      console.log(`Falhou (${e.kind}): ${redact(e.message)}`);
-      if (e.kind === "permissao") {
-        console.log("O Mercado Livre não liberou este anúncio para o seu aplicativo. Confira as chaves (npm run ml:conectar de novo).");
-        console.log("Se as chaves estiverem certas, a API pode estar restringindo anúncios de outros vendedores: cadastre essa oferta manualmente.");
+      try {
+        const q = await src.quoteShipping!(id, digits);
+        console.log(`Frete p/ ${digits}: ${q.cost === 0 ? "grátis" : brl(q.cost)}${q.deadlineDays != null ? `, cerca de ${q.deadlineDays} dia(s)` : ""}`);
+      } catch (e) {
+        console.log(`Frete p/ ${digits}: não cotado (${redact(e instanceof Error ? e.message : String(e))})`);
       }
-      if (e.kind === "nao_encontrado") console.log("Confira o link: abra o anúncio do vendedor (não a página /p/ de catálogo) e copie de novo.");
-    } else {
-      console.log(`Falhou: ${redact(e instanceof Error ? e.message : String(e))}`);
     }
+  } catch (e) {
+    console.log(`   Falhou: ${redact(e instanceof Error ? e.message : String(e))}`);
+  }
+
+  // 3) Página de catálogo (/p/MLB…), quando o link é de catálogo
+  const catalogId = arg.match(/\/p\/(MLB\d+)/i)?.[1]?.toUpperCase() ?? null;
+  let catalogOk = false;
+  if (catalogId) {
+    console.log(`\n3) Consultando a página de catálogo ${catalogId}…`);
+    try {
+      const p = await ml.rawGet<{ name?: string; buy_box_winner?: { item_id?: string; price?: number; shipping?: { free_shipping?: boolean } } | null }>(`/products/${catalogId}`);
+      catalogOk = true;
+      console.log(`   Nome: ${p.name ?? "(não informado)"}`);
+      const w = p.buy_box_winner;
+      if (w) console.log(`   Oferta em destaque: anúncio ${w.item_id ?? "?"}, ${w.price != null ? brl(w.price) : "sem preço"}, frete grátis: ${w.shipping?.free_shipping == null ? "?" : w.shipping.free_shipping ? "sim" : "não"}`);
+      else console.log("   Sem oferta em destaque informada.");
+    } catch (e) {
+      console.log(`   Falhou: ${redact(e instanceof Error ? e.message : String(e))}`);
+    }
+  } else if (!itemOk) {
+    console.log("\n(Para testar também a página de catálogo, rode com o link completo do anúncio em vez do MLB.)");
+  }
+
+  console.log("");
+  if (itemOk) console.log("Resultado: a API está funcionando para este anúncio. Na oferta, use “Atualizar automaticamente pela API”.");
+  else {
+    console.log("Resultado: a conta está conectada, mas o Mercado Livre não liberou este anúncio para o seu aplicativo.");
+    if (catalogOk) console.log("A página de catálogo respondeu: me mande este resultado para eu ligar a atualização por ela.");
+    console.log("Enquanto isso, a oferta continua funcionando no modo manual (preço atualizado por você).");
     process.exitCode = 1;
   }
 }
