@@ -132,6 +132,35 @@ describe("links do Mercado Livre copiados do navegador", () => {
   });
 });
 
+describe("Mercado Livre: anúncio bloqueado cai para a lista do catálogo", () => {
+  const catalogUrl = "https://www.mercadolivre.com.br/racao/p/MLB22610014#polycard_client=affiliates&wid=MLB7125580428";
+  const mock = (items: unknown) =>
+    vi.fn(async (url: string | URL | Request) => {
+      const u = String(url);
+      if (u.includes("/items/MLB")) return new Response("{}", { status: 403 });
+      if (u.endsWith("/products/MLB22610014")) return Response.json({ name: "Fórmula Natural Fresh Meat Cão Filhote Mini e Pequeno 2,5kg", pictures: [{ url: "http://img/x.jpg" }], attributes: [{ id: "FLAVOR", value_name: "Frango" }] });
+      if (u.endsWith("/products/MLB22610014/items")) return Response.json(items);
+      return new Response("{}", { status: 404 });
+    });
+
+  it("usa preço e frete da oferta do mesmo anúncio na página de catálogo", async () => {
+    clearIntegrationCache();
+    const fetchImpl = mock({ results: [{ item_id: "MLB1", price: 120 }, { item_id: "MLB7125580428", price: 139.9, currency_id: "BRL", shipping: { free_shipping: true } }] });
+    const src = createMercadoLivreSource({ env: { MERCADOLIVRE_ACCESS_TOKEN: "t" }, fetchImpl: fetchImpl as unknown as typeof fetch });
+    const l = await src.fetchListing!("MLB7125580428", { url: catalogUrl });
+    expect(l).toMatchObject({ via: "catalogo", price: 139.9, freeShipping: true, availability: "disponivel", listingWeightGrams: 2500, listingFlavor: "Frango", imageUrl: "https://img/x.jpg" });
+  });
+
+  it("não usa a oferta de outro vendedor: sem o anúncio na lista, falha", async () => {
+    clearIntegrationCache();
+    const fetchImpl = mock({ results: [{ item_id: "MLB1", price: 120 }] });
+    const src = createMercadoLivreSource({ env: { MERCADOLIVRE_ACCESS_TOKEN: "t" }, fetchImpl: fetchImpl as unknown as typeof fetch });
+    await expect(src.fetchListing!("MLB7125580428", { url: catalogUrl })).rejects.toMatchObject({ kind: "nao_encontrado" });
+    // sem link de catálogo, continua o 403 original
+    await expect(src.fetchListing!("MLB7125580429")).rejects.toMatchObject({ kind: "permissao" });
+  });
+});
+
 describe("codeFromRedirect (npm run ml:conectar)", () => {
   it("tira o código do endereço de retorno ou aceita o código puro", () => {
     expect(codeFromRedirect("https://www.google.com.br/?code=TG-65f1a2b3c4-123456")).toBe("TG-65f1a2b3c4-123456");

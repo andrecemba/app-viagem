@@ -45,7 +45,7 @@ export async function syncStore(db: Db, storeId: string, opts: { trigger: string
     for (let o = queue.shift(); o; o = queue.shift()) {
       report.checked++;
       try {
-        const l = await src.fetchListing!(o.externalId!);
+        const l = await src.fetchListing!(o.externalId!, { url: o.url });
         applySyncResult(db, o.id, {
           price: l.price,
           availability: l.availability,

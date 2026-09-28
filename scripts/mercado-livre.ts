@@ -183,13 +183,14 @@ async function testar(arg: string | undefined, cep: string | undefined) {
   else {
     console.log(`\n2) Consultando o anúncio ${id}…\n`);
     try {
-      const l = await src.fetchListing!(id!);
+      const l = await src.fetchListing!(id!, { url: arg });
       itemOk = true;
+      if (l.via === "catalogo") console.log("   (anúncio bloqueado para o aplicativo; dados lidos da lista de ofertas da página de catálogo)\n");
       console.log(`Título:          ${l.title ?? "(não informado)"}`);
       console.log(`Preço:           ${l.price != null ? brl(l.price) : "(sem preço)"}`);
       console.log(`Disponível:      ${l.availability === "disponivel" ? "sim" : "não"}`);
       console.log(`Frete grátis:    ${l.freeShipping == null ? "não informado" : l.freeShipping ? "sim" : "não"}`);
-      console.log(`Peso (anúncio):  ${l.listingWeightGrams != null ? `${l.listingWeightGrams / 1000} kg` : "não informado"}`);
+      console.log(`Peso (anúncio):  ${l.listingWeightGrams != null ? `${(l.listingWeightGrams / 1000).toLocaleString("pt-BR")} kg` : "não informado"}`);
       console.log(`Sabor (anúncio): ${l.listingFlavor ?? "não informado"}`);
       console.log(`Link:            ${l.url ?? "(não informado)"}`);
       if (cep) {
@@ -220,6 +221,21 @@ async function testar(arg: string | undefined, cep: string | undefined) {
     } catch (e) {
       console.log(`   Falhou: ${redact(e instanceof Error ? e.message : String(e))}`);
     }
+
+    console.log(`\n4) Consultando as ofertas dos vendedores nesse catálogo…`);
+    try {
+      const r = await ml.rawGet<{ results?: { item_id?: string; price?: number; shipping?: { free_shipping?: boolean } }[] }>(`/products/${catalogId}/items`);
+      const list = Array.isArray(r.results) ? r.results : [];
+      catalogOk = catalogOk || list.length > 0;
+      console.log(`   ${list.length} oferta(s) na lista.`);
+      for (const o of list.slice(0, 8)) {
+        const mark = id && o.item_id === id ? "  ← o seu anúncio" : "";
+        console.log(`   ${o.item_id ?? "?"}: ${o.price != null ? brl(o.price) : "sem preço"}, frete grátis: ${o.shipping?.free_shipping == null ? "?" : o.shipping.free_shipping ? "sim" : "não"}${mark}`);
+      }
+      if (id && !list.some((o) => o.item_id === id)) console.log(`   O anúncio ${id} não está entre as ofertas listadas.`);
+    } catch (e) {
+      console.log(`   Falhou: ${redact(e instanceof Error ? e.message : String(e))}`);
+    }
   } else if (!itemOk) {
     console.log("\n(Para testar também a página de catálogo, rode com o link completo do anúncio em vez do MLB.)");
   }
@@ -232,7 +248,7 @@ async function testar(arg: string | undefined, cep: string | undefined) {
         ? "Resultado: a conta está conectada, mas o Mercado Livre não liberou este anúncio para o seu aplicativo."
         : "Resultado: a conta está conectada. Para testar o anúncio do vendedor, use o link com ?wid=MLB… ou o número MLB do anúncio.",
     );
-    if (catalogOk) console.log("A página de catálogo respondeu: me mande este resultado para eu ligar a atualização por ela.");
+    if (catalogOk) console.log("A página de catálogo respondeu: cadastre o link com ?wid=MLB… (o do anúncio do vendedor) para o preço vir da lista do catálogo.");
     console.log("Enquanto isso, a oferta continua funcionando no modo manual (preço atualizado por você).");
     process.exitCode = 1;
   }

@@ -40,6 +40,8 @@ export interface NormalizedListing {
   listingFlavor: string | null;
   affiliateUrl: string | null;
   obtainedAt: string;
+  /** De onde vieram os dados, quando a loja tem mais de um caminho (ex.: "catalogo"). */
+  via?: string;
 }
 
 export interface ShippingQuoteResult {
@@ -63,7 +65,8 @@ export interface OfferSource {
   status(): SourceStatus;
   capabilities(): SourceCapabilities;
   parseListingUrl(url: string): ParsedListingUrl;
-  fetchListing?(externalId: string): Promise<NormalizedListing>;
+  /** `ctx.url`: link cadastrado da oferta (ajuda lojas que têm páginas de catálogo). */
+  fetchListing?(externalId: string, ctx?: { url?: string | null }): Promise<NormalizedListing>;
   quoteShipping?(externalId: string, cep: string): Promise<ShippingQuoteResult>;
   /** Regras de uso da plataforma relevantes para o admin. */
   terms: string;

@@ -462,10 +462,10 @@ export async function importCatalogAction(_prev: ImportState, formData: FormData
     rows = parseCsv(pasted.includes("\t") ? pasted.replace(/\t/g, ";") : pasted);
   }
   const db = getDb();
-  const lookup: ListingLookup = async (store, externalId) => {
+  const lookup: ListingLookup = async (store, externalId, url) => {
     const src = sourceForStore(store, db);
     if (store.mode !== "api" || !src.fetchListing || src.status().state !== "ativa") return null;
-    return src.fetchListing(externalId);
+    return src.fetchListing(externalId, { url });
   };
   try {
     const results = await importCatalogRows(db, rows, actor, lookup);

@@ -82,7 +82,7 @@ describe("importação de planilha", () => {
     };
     const lookup = vi.fn(async () => listing);
     const [r] = await importCatalogCsv(db, userFile, "teste", lookup);
-    expect(lookup).toHaveBeenCalledWith(expect.objectContaining({ id: "mercado-livre" }), "MLB7125580428");
+    expect(lookup).toHaveBeenCalledWith(expect.objectContaining({ id: "mercado-livre" }), "MLB7125580428", expect.stringContaining("/p/MLB22610014"));
     expect(r.status).toBe("importado");
     const offer = getOffer(db, r.offerId!)!;
     expect(offer).toMatchObject({ dataSource: "api", price: 139.9, freeShipping: true, matchStatus: "confirmada" });

@@ -51,7 +51,7 @@ export default async function NewOfferPage({ params, searchParams }: PageProps<"
   let fetchError: string | null = null;
   if (canFetch && one(sp.buscar) === "1" && parsed?.externalId) {
     try {
-      listing = await src!.fetchListing!(parsed.externalId);
+      listing = await src!.fetchListing!(parsed.externalId, { url: validUrl });
     } catch (e) {
       logIntegrationError(src!.id, e);
       fetchError = e instanceof IntegrationError ? `${ERROR_LABEL[e.kind]}: ${e.message}` : "Falha ao consultar a loja.";

@@ -53,7 +53,7 @@ export interface ImportRowResult {
 }
 
 /** Consulta o anúncio pela API oficial da loja; null quando a loja não tem API ativa. */
-export type ListingLookup = (store: Store, externalId: string) => Promise<NormalizedListing | null>;
+export type ListingLookup = (store: Store, externalId: string, url: string) => Promise<NormalizedListing | null>;
 
 const pick = <T extends string>(value: string, map: Record<string, T>): T | null | undefined => {
   const v = normalizeText(value).replace(/[_-]+/g, " ").trim();
@@ -128,7 +128,7 @@ export async function importCatalogRows(db: Db, rows: Record<string, string>[], 
       let listing: NormalizedListing | null = null;
       if (lookup && externalId) {
         try {
-          listing = await lookup(store, externalId);
+          listing = await lookup(store, externalId, url);
           if (listing) r.messages.push(`Dados do anúncio ${externalId} lidos pela API do ${store.name}.`);
         } catch (e) {
           r.messages.push(`API do ${store.name} não respondeu (${e instanceof Error ? e.message : "erro"}): usados só os dados do arquivo.`);

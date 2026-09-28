@@ -39,6 +39,25 @@ interface MlItem {
   attributes?: { id: string; value_name?: string | null }[];
 }
 
+interface MlProduct {
+  id?: string;
+  name?: string;
+  pictures?: { url?: string }[];
+  attributes?: { id: string; value_name?: string | null }[];
+}
+
+interface MlCatalogOffer {
+  item_id?: string;
+  price?: number | null;
+  currency_id?: string;
+  shipping?: { free_shipping?: boolean };
+}
+
+/** ID da página de catálogo (/p/MLB…) de um link do Mercado Livre. */
+export function catalogIdFromUrl(url: string | null | undefined): string | null {
+  return url?.match(/\/p\/(MLB\d+)/i)?.[1]?.toUpperCase() ?? null;
+}
+
 export function parseMercadoLivreUrl(url: string) {
   let u: URL;
   try {
@@ -115,6 +134,40 @@ export function createMercadoLivreSource(deps: MercadoLivreDeps): MercadoLivreSo
     return requestJson<T>(`${API}${path}`, { headers: { authorization: `Bearer ${t}`, accept: "application/json" } }, { source, minIntervalMs: 250, fetchImpl });
   }
 
+  /**
+   * GET /products/{catálogo} (nome, fotos, atributos) + GET /products/{catálogo}/items
+   * (ofertas ativas de cada vendedor, com preço e frete grátis). null = o anúncio não está na lista.
+   */
+  async function fromCatalog(externalId: string, catalogId: string): Promise<NormalizedListing | null> {
+    const [product, offers] = await Promise.all([
+      cached(`ml:product:${catalogId}`, 10 * 60_000, () => get<MlProduct>(`/products/${catalogId}`)),
+      cached(`ml:product-items:${catalogId}`, 10 * 60_000, () => get<{ results?: MlCatalogOffer[] }>(`/products/${catalogId}/items`)),
+    ]);
+    if (!offers || typeof offers !== "object" || !Array.isArray(offers.results)) {
+      throw new IntegrationError("Lista de ofertas do catálogo em formato inesperado (a API pode ter mudado).", "api_mudou");
+    }
+    const hit = offers.results.find((o) => o.item_id === externalId);
+    if (!hit) return null;
+    if (hit.price != null && typeof hit.price !== "number") throw new IntegrationError("Campo de preço em formato inesperado.", "api_mudou");
+    const attr = (id: string) => product?.attributes?.find((a) => a.id === id)?.value_name ?? null;
+    return {
+      externalId,
+      url: null,
+      title: product?.name ?? null,
+      price: typeof hit.price === "number" && hit.price > 0 ? hit.price : null,
+      currency: hit.currency_id ?? "BRL",
+      // A lista do catálogo traz só ofertas ativas: estar nela é estar à venda.
+      availability: "disponivel",
+      freeShipping: typeof hit.shipping?.free_shipping === "boolean" ? hit.shipping.free_shipping : null,
+      imageUrl: product?.pictures?.[0]?.url?.replace(/^http:/, "https:") ?? null,
+      listingWeightGrams: weightFromTitle(attr("NET_WEIGHT") ?? attr("WEIGHT")) ?? weightFromTitle(product?.name),
+      listingFlavor: attr("FLAVOR"),
+      affiliateUrl: null,
+      obtainedAt: new Date().toISOString(),
+      via: "catalogo",
+    };
+  }
+
   return {
     rawGet: get,
     id: source,
@@ -132,9 +185,25 @@ export function createMercadoLivreSource(deps: MercadoLivreDeps): MercadoLivreSo
     },
     parseListingUrl: parseMercadoLivreUrl,
 
-    async fetchListing(externalId: string): Promise<NormalizedListing> {
+    async fetchListing(externalId: string, ctx?: { url?: string | null }): Promise<NormalizedListing> {
       if (!/^MLB\d{6,}$/.test(externalId)) throw new IntegrationError(`ID de anúncio inválido: ${externalId}`, "dados");
-      const item = await cached(`ml:item:${externalId}`, 10 * 60_000, () => get<MlItem>(`/items/${externalId}`));
+      let item: MlItem;
+      try {
+        item = await cached(`ml:item:${externalId}`, 10 * 60_000, () => get<MlItem>(`/items/${externalId}`));
+      } catch (e) {
+        // Anúncio de outro vendedor pode ser recusado (403). Se o link é de uma página de
+        // catálogo, procura o mesmo anúncio na lista oficial de ofertas desse catálogo.
+        const catalogId = catalogIdFromUrl(ctx?.url);
+        if (!(e instanceof IntegrationError) || e.kind !== "permissao" || !catalogId) throw e;
+        const viaCatalog = await fromCatalog(externalId, catalogId);
+        if (!viaCatalog) {
+          throw new IntegrationError(
+            `O anúncio ${externalId} não foi liberado para o aplicativo e não aparece entre as ofertas da página de catálogo ${catalogId}.`,
+            "nao_encontrado",
+          );
+        }
+        return viaCatalog;
+      }
       if (!item || typeof item !== "object" || item.id !== externalId || !("status" in item)) {
         throw new IntegrationError("Resposta do Mercado Livre em formato inesperado (a API pode ter mudado).", "api_mudou");
       }
@@ -154,6 +223,7 @@ export function createMercadoLivreSource(deps: MercadoLivreDeps): MercadoLivreSo
         listingFlavor: attr("FLAVOR"),
         affiliateUrl: null,
         obtainedAt: new Date().toISOString(),
+        via: "anuncio",
       };
     },
 
