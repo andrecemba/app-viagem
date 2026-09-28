@@ -1,6 +1,6 @@
-import type Database from "better-sqlite3";
+import type { SqliteDb } from "./sqlite";
 
-export type Db = Database.Database;
+export type Db = SqliteDb;
 
 export const nowIso = () => new Date().toISOString();
 

@@ -2,7 +2,7 @@
 
 Site brasileiro para encontrar o menor preço da ração que a pessoa já compra, com painel administrativo em `/admin`.
 
-**Stack:** Next.js 16 (App Router, páginas no servidor) · TypeScript · Tailwind CSS v4 · SQLite (better-sqlite3) com migrações em SQL · Vitest.
+**Stack:** Next.js 16 (App Router, páginas no servidor) · TypeScript · Tailwind CSS v4 · SQLite embutido no Node.js (`node:sqlite`, Node 22.13 ou mais novo: nada para compilar na instalação) com migrações em SQL · Vitest.
 Escolhi manter o Next.js que já estava no projeto (páginas públicas rápidas e boas para busca, painel e rotas de API no mesmo app)
 e usar SQLite: persistência real num arquivo, sem serviço extra para subir. Para hospedar sem disco persistente (serverless),
 troque o banco por Postgres mantendo as mesmas tabelas (`db/migrations`).

@@ -1,4 +1,3 @@
-import Database from "better-sqlite3";
 import { mkdirSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 
@@ -11,6 +10,7 @@ import path from "node:path";
  * as páginas só chegam ao banco por módulos de servidor.
  */
 import { ensureSeed } from "./seed";
+import { SqliteDb } from "./sqlite";
 import type { Db } from "./util";
 
 export { nowIso, parseJson, type Db } from "./util";
@@ -42,7 +42,7 @@ export function migrate(db: Db, dir = migrationsDir()): string[] {
 
 export function openDb(file = databasePath()): Db {
   if (file !== ":memory:") mkdirSync(path.dirname(file), { recursive: true });
-  const db = new Database(file);
+  const db = new SqliteDb(file);
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON");
   db.pragma("busy_timeout = 5000");
