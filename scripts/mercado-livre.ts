@@ -144,9 +144,11 @@ async function testar(arg: string | undefined, cep: string | undefined) {
     return;
   }
   let id = /^MLB-?\d{6,}$/i.test(arg) ? arg.toUpperCase().replace("-", "") : null;
+  // Link de catálogo (/p/MLB…) sem o anúncio do vendedor: testa só o catálogo.
+  const catalogId = arg.match(/\/p\/(MLB\d+)/i)?.[1]?.toUpperCase() ?? null;
   if (!id) {
     const parsed = parseMercadoLivreUrl(arg);
-    if (!parsed.externalId) {
+    if (!parsed.externalId && !catalogId) {
       console.log(parsed.hint);
       process.exitCode = 1;
       return;
@@ -176,33 +178,35 @@ async function testar(arg: string | undefined, cep: string | undefined) {
   }
 
   // 2) O anúncio do vendedor
-  console.log(`\n2) Consultando o anúncio ${id}…\n`);
   let itemOk = false;
-  try {
-    const l = await src.fetchListing!(id);
-    itemOk = true;
-    console.log(`Título:          ${l.title ?? "(não informado)"}`);
-    console.log(`Preço:           ${l.price != null ? brl(l.price) : "(sem preço)"}`);
-    console.log(`Disponível:      ${l.availability === "disponivel" ? "sim" : "não"}`);
-    console.log(`Frete grátis:    ${l.freeShipping == null ? "não informado" : l.freeShipping ? "sim" : "não"}`);
-    console.log(`Peso (anúncio):  ${l.listingWeightGrams != null ? `${l.listingWeightGrams / 1000} kg` : "não informado"}`);
-    console.log(`Sabor (anúncio): ${l.listingFlavor ?? "não informado"}`);
-    console.log(`Link:            ${l.url ?? "(não informado)"}`);
-    if (cep) {
-      const digits = cep.replace(/\D/g, "");
-      try {
-        const q = await src.quoteShipping!(id, digits);
-        console.log(`Frete p/ ${digits}: ${q.cost === 0 ? "grátis" : brl(q.cost)}${q.deadlineDays != null ? `, cerca de ${q.deadlineDays} dia(s)` : ""}`);
-      } catch (e) {
-        console.log(`Frete p/ ${digits}: não cotado (${redact(e instanceof Error ? e.message : String(e))})`);
+  if (!id) console.log("\n2) O link é da página de catálogo, sem o anúncio de um vendedor: consulta do anúncio pulada.");
+  else {
+    console.log(`\n2) Consultando o anúncio ${id}…\n`);
+    try {
+      const l = await src.fetchListing!(id!);
+      itemOk = true;
+      console.log(`Título:          ${l.title ?? "(não informado)"}`);
+      console.log(`Preço:           ${l.price != null ? brl(l.price) : "(sem preço)"}`);
+      console.log(`Disponível:      ${l.availability === "disponivel" ? "sim" : "não"}`);
+      console.log(`Frete grátis:    ${l.freeShipping == null ? "não informado" : l.freeShipping ? "sim" : "não"}`);
+      console.log(`Peso (anúncio):  ${l.listingWeightGrams != null ? `${l.listingWeightGrams / 1000} kg` : "não informado"}`);
+      console.log(`Sabor (anúncio): ${l.listingFlavor ?? "não informado"}`);
+      console.log(`Link:            ${l.url ?? "(não informado)"}`);
+      if (cep) {
+        const digits = cep.replace(/\D/g, "");
+        try {
+          const q = await src.quoteShipping!(id!, digits);
+          console.log(`Frete p/ ${digits}: ${q.cost === 0 ? "grátis" : brl(q.cost)}${q.deadlineDays != null ? `, cerca de ${q.deadlineDays} dia(s)` : ""}`);
+        } catch (e) {
+          console.log(`Frete p/ ${digits}: não cotado (${redact(e instanceof Error ? e.message : String(e))})`);
+        }
       }
+    } catch (e) {
+      console.log(`   Falhou: ${redact(e instanceof Error ? e.message : String(e))}`);
     }
-  } catch (e) {
-    console.log(`   Falhou: ${redact(e instanceof Error ? e.message : String(e))}`);
   }
 
   // 3) Página de catálogo (/p/MLB…), quando o link é de catálogo
-  const catalogId = arg.match(/\/p\/(MLB\d+)/i)?.[1]?.toUpperCase() ?? null;
   let catalogOk = false;
   if (catalogId) {
     console.log(`\n3) Consultando a página de catálogo ${catalogId}…`);
@@ -223,7 +227,11 @@ async function testar(arg: string | undefined, cep: string | undefined) {
   console.log("");
   if (itemOk) console.log("Resultado: a API está funcionando para este anúncio. Na oferta, use “Atualizar automaticamente pela API”.");
   else {
-    console.log("Resultado: a conta está conectada, mas o Mercado Livre não liberou este anúncio para o seu aplicativo.");
+    console.log(
+      id
+        ? "Resultado: a conta está conectada, mas o Mercado Livre não liberou este anúncio para o seu aplicativo."
+        : "Resultado: a conta está conectada. Para testar o anúncio do vendedor, use o link com ?wid=MLB… ou o número MLB do anúncio.",
+    );
     if (catalogOk) console.log("A página de catálogo respondeu: me mande este resultado para eu ligar a atualização por ela.");
     console.log("Enquanto isso, a oferta continua funcionando no modo manual (preço atualizado por você).");
     process.exitCode = 1;
