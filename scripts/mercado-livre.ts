@@ -3,6 +3,7 @@
  *   npm run ml:conectar              autoriza sua conta no aplicativo e grava as chaves no .env.local
  *   npm run ml:testar -- <link|MLB…> [CEP]   consulta um anúncio pela API oficial (e o frete, se passar o CEP)
  *   npm run ml:catalogo [-- termos…]  busca rações no catálogo e gera planilhas para Produtos → Importar planilha
+ *   npm run ml:mais-vendidos [-- 10]   as rações mais vendidas (cães e gatos) em planilha + página com os links
  * Tudo roda no seu computador; as chaves ficam só no .env.local (nunca vão para o navegador).
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -13,7 +14,7 @@ import { getDb } from "../src/lib/db";
 import { codeFromRedirect, parseMercadoLivreUrl, type MercadoLivreSource } from "../src/lib/integrations/adapters/mercado-livre";
 import { redact } from "../src/lib/integrations/http";
 import { IntegrationError } from "../src/lib/integrations/types";
-import { catalogRow, toCsv, type CatalogRow, type MlCatalogProduct } from "../src/lib/integrations/ml-catalog";
+import { FOOD_DOMAIN, catalogRow, linksPage, toCsv, type CatalogRow, type LinkEntry, type MlCatalogProduct } from "../src/lib/integrations/ml-catalog";
 import { sources } from "../src/lib/integrations";
 
 const ENV_FILE = ".env.local";
@@ -353,13 +354,130 @@ async function catalogo(terms: string[]) {
   }
 }
 
+type Category = { id: string; name: string; children_categories?: { id: string; name: string }[] };
+
+/** Categoria de ração de cada espécie: pelo “adivinhador” de categorias do ML e, se falhar, pela árvore de Animais. */
+async function foodCategory(ml: MercadoLivreSource, species: "caes" | "gatos"): Promise<string | null> {
+  const q = species === "caes" ? "ração para cachorro" : "ração para gato";
+  try {
+    const found = await ml.rawGet<{ domain_id?: string; category_id?: string }[]>(`/sites/MLB/domain_discovery/search?limit=5&q=${encodeURIComponent(q)}`);
+    const hit = (Array.isArray(found) ? found : []).find((d) => d.domain_id === FOOD_DOMAIN && d.category_id);
+    if (hit?.category_id) return hit.category_id;
+  } catch {
+    /* tenta pela árvore */
+  }
+  const norm = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  try {
+    const animals = await ml.rawGet<Category>("/categories/MLB1071");
+    const pet = animals.children_categories?.find((c) => (species === "caes" ? /caes|cachorro/ : /gato/).test(norm(c.name)));
+    if (!pet) return null;
+    const sub = await ml.rawGet<Category>(`/categories/${pet.id}`);
+    return sub.children_categories?.find((c) => /racao|alimento/.test(norm(c.name)))?.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function maisVendidos(args: string[]) {
+  const src = sources(getDb()).get("mercado-livre")!;
+  if (src.status().state !== "ativa") {
+    console.log("Mercado Livre não conectado. Rode: npm run ml:conectar");
+    process.exitCode = 1;
+    return;
+  }
+  const ml = src as MercadoLivreSource;
+  const want = Math.min(Math.max(Number(args[0]) || 10, 1), 50);
+
+  const known = new Set<string>();
+  for (const r of getDb().prepare("SELECT external_id, url FROM offers WHERE store_id = 'mercado-livre'").all() as { external_id: string | null; url: string }[]) {
+    if (r.external_id) known.add(r.external_id);
+    const m = r.url.match(/\/p\/(MLB\d+)/i);
+    if (m) known.add(m[1].toUpperCase());
+  }
+
+  const groups: { title: string; entries: LinkEntry[] }[] = [];
+  const rows: CatalogRow[] = [];
+  for (const species of ["caes", "gatos"] as const) {
+    const label = species === "caes" ? "Cães" : "Gatos";
+    const category = await foodCategory(ml, species);
+    if (!category) {
+      console.log(`\n${label}: não achei a categoria de ração no Mercado Livre.`);
+      continue;
+    }
+    let content: { id?: string; position?: number; type?: string }[] = [];
+    try {
+      const h = await ml.rawGet<{ content?: typeof content }>(`/highlights/MLB/category/${category}`);
+      content = Array.isArray(h.content) ? h.content : [];
+    } catch (e) {
+      console.log(`\n${label}: a lista de mais vendidos não respondeu (${redact(e instanceof Error ? e.message : String(e))}).`);
+      continue;
+    }
+    console.log(`\n${label} (categoria ${category}): ${content.length} na lista de mais vendidos`);
+
+    const entries: LinkEntry[] = [];
+    let ready = 0;
+    let noCatalog = 0;
+    for (const h of content.sort((a, b) => (a.position ?? 99) - (b.position ?? 99))) {
+      if (ready >= want) break;
+      if (h.type !== "PRODUCT" || !h.id) {
+        noCatalog++; // anúncio avulso, sem página de catálogo: a API não deixa ler
+        continue;
+      }
+      let p: MlCatalogProduct & { pictures?: { url?: string }[] };
+      try {
+        p = await ml.rawGet(`/products/${h.id}`);
+      } catch {
+        noCatalog++;
+        continue;
+      }
+      const entry: LinkEntry = {
+        position: h.position ?? entries.length + 1,
+        name: p.name ?? h.id,
+        imageUrl: p.pictures?.[0]?.url?.replace(/^http:/, "https:") ?? null,
+        pageUrl: `https://www.mercadolivre.com.br/p/${h.id}`,
+        row: null,
+        note: null,
+      };
+      if (known.has(h.id)) entry.note = "Já está no site.";
+      else {
+        const r = catalogRow(p);
+        if ("row" in r) {
+          entry.row = r.row;
+          rows.push(r.row);
+          ready++;
+        } else entry.note = `Fica de fora: ${r.skip}.`;
+      }
+      entries.push(entry);
+      console.log(`   ${entry.position}º ${entry.name}${entry.note ? `  → ${entry.note}` : ""}`);
+    }
+    if (noCatalog) console.log(`   (${noCatalog} da lista são anúncios sem página de catálogo e foram pulados)`);
+    groups.push({ title: `${label}: mais vendidas (${ready} para importar)`, entries });
+  }
+
+  if (!rows.length) {
+    console.log("\nNenhum produto novo para importar.");
+    return;
+  }
+  const dir = path.join(process.cwd(), "catalogo-mercado-livre");
+  mkdirSync(dir, { recursive: true });
+  const csv = path.join(dir, "mais-vendidos.csv");
+  const html = path.join(dir, "mais-vendidos.html");
+  writeFileSync(csv, toCsv(rows));
+  writeFileSync(html, linksPage("Rações mais vendidas no Mercado Livre", groups));
+  console.log(`\nProntos para importar: ${rows.length}`);
+  console.log(`\nAbra esta página no navegador (dois cliques no arquivo):\n   ${html}`);
+  console.log("Nela tem o link de cada ração para gerar o link de afiliado e o botão que baixa a planilha preenchida.");
+  console.log(`\nA mesma planilha, sem os links de afiliado: ${csv}\n`);
+}
+
 async function main() {
   const [cmd, ...rest] = process.argv.slice(2);
   if (cmd === "conectar") await conectar();
   else if (cmd === "testar") await testar(rest[0], rest[1]);
   else if (cmd === "catalogo") await catalogo(rest);
+  else if (cmd === "mais-vendidos") await maisVendidos(rest);
   else {
-    console.log("Uso: tsx scripts/mercado-livre.ts conectar | testar <link|MLB…> [CEP] | catalogo [termos…]");
+    console.log("Uso: tsx scripts/mercado-livre.ts conectar | testar <link|MLB…> [CEP] | catalogo [termos…] | mais-vendidos [quantidade]");
     process.exitCode = 1;
   }
 }

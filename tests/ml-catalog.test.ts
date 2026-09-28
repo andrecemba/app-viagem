@@ -4,7 +4,7 @@ import { migrate, openDb } from "@/lib/db";
 import { ensureSeed } from "@/lib/db/seed";
 import { importCatalogCsv } from "@/lib/domain/catalog-import";
 import { getProduct } from "@/lib/domain/products";
-import { catalogRow, toCsv, type CatalogRow, type MlCatalogProduct } from "@/lib/integrations/ml-catalog";
+import { catalogRow, linksPage, toCsv, type CatalogRow, type MlCatalogProduct } from "@/lib/integrations/ml-catalog";
 
 vi.mock("server-only", () => ({}));
 
@@ -73,5 +73,22 @@ describe("catálogo do Mercado Livre → planilha", () => {
     expect(lookup).toHaveBeenCalledWith(expect.objectContaining({ id: "mercado-livre" }), "MLB51331384", "https://www.mercadolivre.com.br/p/MLB51331384");
     const p = getProduct(db, r.productId!)!;
     expect(p).toMatchObject({ brand: "Trustydog", line: "Premium Especial", indication: "Adultos Pequeno", weightGrams: 15000, lifeStage: "adulto", size: "pequeno", foodType: "seca" });
+  });
+
+  it("página de links: um link por produto e campo só para o que vai para a planilha", () => {
+    const row = (catalogRow(trusty) as { row: CatalogRow }).row;
+    const html = linksPage("Mais vendidas", [
+      {
+        title: "Cães",
+        entries: [
+          { position: 1, name: "Trusty <15kg>", imageUrl: null, pageUrl: row.link_anuncio, row, note: null },
+          { position: 2, name: "Fórmula Natural", imageUrl: null, pageUrl: "https://www.mercadolivre.com.br/p/MLB22610014", row: null, note: "Já está no site." },
+        ],
+      },
+    ]);
+    expect(html).toContain('href="https://www.mercadolivre.com.br/p/MLB51331384"');
+    expect(html).toContain("Trusty &lt;15kg&gt;");
+    expect(html.match(/<input data-i=/g)).toHaveLength(1);
+    expect(html).toContain("Já está no site.");
   });
 });
