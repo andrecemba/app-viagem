@@ -18,6 +18,8 @@ import { saveSettings } from "@/lib/domain/settings";
 import { getStore, listStores, saveStore } from "@/lib/domain/stores";
 import { OVERRIDABLE_FIELDS, type Availability, type DataSource, type OfferValues, type OverridableField, type PriceDisplay, type StoreMode } from "@/lib/domain/types";
 import { ValidationError } from "@/lib/domain/validation";
+import { importCatalogCsv, type ImportRowResult, type ListingLookup } from "@/lib/domain/catalog-import";
+import { sourceForStore } from "@/lib/integrations";
 import { importOffersCsv } from "@/lib/integrations/csv";
 import { refreshOffer, syncStore } from "@/lib/integrations/sync";
 
@@ -394,4 +396,36 @@ export async function removeDemoAction(formData: FormData) {
   removeDemo(getDb());
   refresh();
   back("/admin/produtos", { aviso: "Produtos e ofertas de exemplo removidos. O cadastro real continua." });
+}
+
+export interface ImportState {
+  results?: ImportRowResult[];
+  error?: string;
+}
+
+/** Planilha de produtos e ofertas: cria o que falta e completa pela API oficial quando a loja tem API ativa. */
+export async function importCatalogAction(_prev: ImportState, formData: FormData): Promise<ImportState> {
+  const { actor } = await requireAdmin();
+  const file = formData.get("arquivo");
+  const pasted = text(formData, "texto");
+  let content = pasted;
+  if (file instanceof File && file.size > 0) {
+    if (file.size > 2_000_000) return { error: "Arquivo grande demais (máximo 2 MB)." };
+    content = await file.text();
+  }
+  if (!content.trim()) return { error: "Escolha o arquivo .csv (ou cole o conteúdo)." };
+  const db = getDb();
+  const lookup: ListingLookup = async (store, externalId) => {
+    const src = sourceForStore(store, db);
+    if (store.mode !== "api" || !src.fetchListing || src.status().state !== "ativa") return null;
+    return src.fetchListing(externalId);
+  };
+  try {
+    const results = await importCatalogCsv(db, content, actor, lookup);
+    refresh();
+    return { results };
+  } catch (e) {
+    if (e instanceof ValidationError) return { error: e.message };
+    throw e;
+  }
 }

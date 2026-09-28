@@ -47,7 +47,10 @@ export function parseMercadoLivreUrl(url: string) {
     return { externalId: null, hint: "URL inválida." };
   }
   // Página de catálogo às vezes traz o anúncio escolhido: ?wid=MLB..., ?item_id=MLB... ou pdp_filters=item_id:MLB...
-  const fromQuery = u.searchParams.get("wid") ?? u.searchParams.get("item_id") ?? u.searchParams.get("pdp_filters")?.match(/item_id:(MLB\d+)/i)?.[1] ?? null;
+  // Links do programa de afiliados trazem o wid depois do # (…#polycard_client=affiliates&wid=MLB…).
+  const hash = new URLSearchParams(u.hash.replace(/^#/, ""));
+  const fromQuery =
+    u.searchParams.get("wid") ?? u.searchParams.get("item_id") ?? u.searchParams.get("pdp_filters")?.match(/item_id:(MLB\d+)/i)?.[1] ?? hash.get("wid") ?? null;
   const m = (fromQuery ?? u.pathname).match(/MLB-?(\d{6,})/i);
   if (m && !(u.pathname.includes("/p/") && !fromQuery)) return { externalId: `MLB${m[1]}` };
   if (u.pathname.includes("/p/")) {

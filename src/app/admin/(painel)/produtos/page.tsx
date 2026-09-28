@@ -53,9 +53,14 @@ export default async function ProductsPage({ searchParams }: PageProps<"/admin/p
         title="Produtos"
         description="Cada produto é uma ração exata: espécie, marca, linha, indicação, sabor e peso. Outro peso, sabor ou versão para castrados = outro produto."
         actions={
-          <Link href="/admin/produtos/novo" className={btn.primary}>
-            Novo produto
-          </Link>
+          <>
+            <Link href="/admin/produtos/importar" className={btn.secondary}>
+              Importar planilha
+            </Link>
+            <Link href="/admin/produtos/novo" className={btn.primary}>
+              Novo produto
+            </Link>
+          </>
         }
       />
       <Flash aviso={one(sp.aviso)} erro={one(sp.erro)} />

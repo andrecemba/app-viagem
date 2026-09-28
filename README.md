@@ -54,6 +54,9 @@ Login por e-mail e senha definidos no servidor (senha só em hash scrypt, sessã
 `src/proxy.ts` bloqueia `/admin` e cada página e ação confere a sessão de novo.
 
 - **Produtos**: pesquisar, filtrar, criar, editar, ativar/desativar em lote, remover exemplos.
+- **Importar planilha** (em Produtos): CSV com uma linha por ração + anúncio (modelo em `public/modelo-importacao.csv`).
+  Reaproveita produtos existentes, não duplica anúncios, marca campos vazios como “Pendente de verificação” e, com a API da
+  loja ativa, completa preço, disponibilidade, frete grátis, peso, sabor e foto pelo anúncio oficial.
 - **Nova oferta** (no produto): colar a URL do anúncio → loja detectada pelo domínio e ID extraído quando o formato permite
   → revisar preço, disponibilidade, selo de frete, link de afiliado, peso e sabor do anúncio → salvar.
 - **Oferta**: editar tudo; em ofertas importadas cada alteração vira **correção manual** (quem, quando, motivo), que a próxima

@@ -280,6 +280,40 @@ e a frase **“A API está funcionando”**.
 
 ---
 
+## Parte 9 — Importar várias rações por planilha
+
+Em vez de cadastrar uma a uma, dá para montar uma planilha e importar tudo de uma vez.
+
+1. No painel, **Produtos → Importar planilha → Baixar o modelo (.csv)**. Abra no Excel ou no Google Planilhas.
+2. Uma linha por ração + anúncio. Colunas:
+
+| Coluna | O que colocar | Exemplo |
+|---|---|---|
+| especie | Cachorro ou Gato | Cachorro |
+| marca, linha, indicacao | como no anúncio | Fórmula Natural · Fresh Meat · Filhotes Mini e Pequeno |
+| sabor | como no anúncio | Frango |
+| peso | peso da embalagem, com kg ou g | 2,5 kg |
+| castrado | sim ou não | não |
+| idade | filhote, adulto, sênior ou todas | filhote |
+| porte | mini, pequeno, médio, grande, mini e pequeno, médio e grande, todos | mini e pequeno |
+| tipo | seca, natural, úmida ou medicamentosa | seca |
+| link_anuncio | link do anúncio (barra do navegador) | https://www.mercadolivre.com.br/… |
+| id_anuncio | pode deixar vazio: sai do link quando dá | MLB7125580428 |
+| preco, disponivel, frete_gratis | preço sem frete; sim/não | 149,90 · sim · sim |
+| link_afiliado | link gerado no programa de afiliados | https://meli.la/… |
+| observacao | anotação sua (opcional) | |
+
+3. **Não preencha nada que não conferiu no anúncio.** O que ficar vazio aparece como **“Pendente de verificação”**.
+   Sem **espécie, marca, indicação, peso e link do anúncio** a linha não é importada (para não criar a ração errada).
+4. Salve como **CSV** (Excel: *Arquivo → Salvar como → CSV UTF-8*). Em **Importar planilha**, escolha o arquivo e clique em **Importar**.
+5. O resultado mostra cada linha: **Importado**, **Pendente de verificação** (com o que falta), **Já cadastrado** ou **Erro**.
+   Pode importar o mesmo arquivo de novo depois de completar: o que já existe não é duplicado.
+
+**Preenchimento automático:** com a API do Mercado Livre ligada (Parte 8), basta **link_anuncio** e o básico da ração.
+Preço, disponibilidade, frete grátis, peso, sabor e foto vêm do anúncio oficial (se o peso ficar vazio, usa o do anúncio).
+
+---
+
 ## Problemas comuns
 
 | O que aparece | O que fazer |

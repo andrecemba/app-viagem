@@ -37,13 +37,13 @@ export function parseCsv(text: string): Record<string, string>[] {
   return lines.slice(1).map((l) => Object.fromEntries(split(l).map((v, i) => [header[i] ?? `col${i}`, v])));
 }
 
-function parsePrice(v: string | undefined): number | null {
+export function parsePrice(v: string | undefined): number | null {
   if (!v) return null;
   const n = Number(v.includes(",") ? v.replace(/\./g, "").replace(",", ".") : v);
   return Number.isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : null;
 }
 
-function parseBool(v: string | undefined): boolean | null {
+export function parseBool(v: string | undefined): boolean | null {
   const s = (v ?? "").trim().toLowerCase();
   if (["1", "sim", "s", "true", "yes"].includes(s)) return true;
   if (["0", "nao", "não", "n", "false", "no"].includes(s)) return false;

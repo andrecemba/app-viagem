@@ -15,6 +15,13 @@ describe("extração do ID do anúncio", () => {
   it("Mercado Livre: anúncio sim, página de catálogo pede o anúncio do vendedor", () => {
     expect(parseMercadoLivreUrl("https://produto.mercadolivre.com.br/MLB-1234567890-racao-golden-15kg-_JM").externalId).toBe("MLB1234567890");
     expect(parseMercadoLivreUrl("https://www.mercadolivre.com.br/racao/p/MLB19876543?wid=MLB555666777").externalId).toBe("MLB555666777");
+    // link vindo do programa de afiliados: wid depois do #, e um "deal:MLB…" que não é anúncio
+    expect(
+      parseMercadoLivreUrl(
+        "https://www.mercadolivre.com.br/formula-natural-fresh-meat-cao-filhote-mini-e-pequeno-cao-filhote-25kg/p/MLB22610014?pdp_filters=deal%3AMLB1578289-1&extra_comm=false#polycard_client=affiliates&wid=MLB7125580428&sid=affiliates",
+      ).externalId,
+    ).toBe("MLB7125580428");
+    expect(parseMercadoLivreUrl("https://www.mercadolivre.com.br/racao/p/MLB19876543?pdp_filters=deal%3AMLB1578289-1").externalId).toBeNull();
     const cat = parseMercadoLivreUrl("https://www.mercadolivre.com.br/racao/p/MLB19876543");
     expect(cat.externalId).toBeNull();
     expect(cat.hint).toMatch(/catálogo/);
