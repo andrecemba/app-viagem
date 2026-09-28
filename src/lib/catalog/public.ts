@@ -94,6 +94,11 @@ function toItem(p: Product, offers: Offer[], stores: Map<string, Store>, setting
   if (p.neutered && !needs.includes("castrados")) needs.unshift("castrados");
   const updated = pub.map((o) => o.priceObtainedAt).filter(Boolean).sort().at(-1) ?? null;
   const publicIds = new Set(pub.filter((o) => o.price != null).map((o) => Number(o.id)));
+  // Sem foto no produto: usa a foto oficial do anúncio que veio pela API ou arquivo da loja,
+  // só de oferta ativa, real e com peso e sabor confirmados (nunca de oferta incerta ou de exemplo).
+  const listingPhoto =
+    offers.find((o) => o.active && !o.isDemo && o.dataSource !== "manual" && o.matchStatus === "confirmada" && o.imageUrl?.startsWith("https://") && stores.get(o.storeId)?.active)
+      ?.imageUrl ?? null;
   return {
     id: String(p.id),
     slug: p.slug,
@@ -114,7 +119,7 @@ function toItem(p: Product, offers: Offer[], stores: Map<string, Store>, setting
     vetNote: p.foodType === "medicamentosa" ? p.indication : null,
     gtin: p.gtin,
     description: p.description,
-    photoUrl: p.imageUrl,
+    photoUrl: p.imageUrl ?? listingPhoto,
     offers: pub,
     bestPrice: best?.price ?? null,
     storeCount: priced.length,

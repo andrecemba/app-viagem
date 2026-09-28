@@ -193,6 +193,7 @@ async function testar(arg: string | undefined, cep: string | undefined) {
       console.log(`Peso (anúncio):  ${l.listingWeightGrams != null ? `${(l.listingWeightGrams / 1000).toLocaleString("pt-BR")} kg` : "não informado"}`);
       console.log(`Sabor (anúncio): ${l.listingFlavor ?? "não informado"}`);
       console.log(`Link:            ${l.url ?? "(não informado)"}`);
+      console.log(`Foto:            ${l.imageUrl ?? "(não informada)"}`);
       if (cep) {
         const digits = cep.replace(/\D/g, "");
         try {
