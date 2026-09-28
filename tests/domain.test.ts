@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { seedProducts } from "@/data/seed-products";
-import { migrate, openDb } from "@/lib/db";
+import { databasePath, migrate, openDb } from "@/lib/db";
 import { ensureSeed } from "@/lib/db/seed";
 import { offerAlerts } from "@/lib/domain/alerts";
 import { applySyncFailure, applySyncResult, createOffer, getOffer, listEvents, revertOverride, updateOffer, type NewOfferInput } from "@/lib/domain/offers";
@@ -277,5 +277,17 @@ describe("sessão", () => {
     const h = hashPassword("senha-forte-123");
     expect(verifyPassword("senha-forte-123", h)).toBe(true);
     expect(verifyPassword("errada", h)).toBe(false);
+  });
+});
+
+describe("databasePath", () => {
+  it("trata DATABASE_PATH vazio (linha do .env.local sem valor) como não definido", () => {
+    const prev = process.env.DATABASE_PATH;
+    process.env.DATABASE_PATH = "";
+    expect(databasePath()).toMatch(/[\\/]\.data[\\/]racao\.db$/);
+    process.env.DATABASE_PATH = "  ";
+    expect(databasePath()).toMatch(/[\\/]\.data[\\/]racao\.db$/);
+    if (prev === undefined) delete process.env.DATABASE_PATH;
+    else process.env.DATABASE_PATH = prev;
   });
 });

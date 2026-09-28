@@ -229,6 +229,7 @@ site de desenvolvedores do Mercado Livre). Os passos técnicos estão no `README
 | “A URL não é de Mercado Livre” | O link precisa ser do anúncio (`mercadolivre.com.br`). Links curtos de compartilhamento (`meli.la`) vão no campo **Link de afiliado**, não no da URL. |
 | “O link de afiliado não é de Mercado Livre…” | Confira se colou o link de afiliado do Mercado Livre, e não de outra loja. |
 | “Já existe um produto com a mesma espécie, marca…” | A ração já está cadastrada. Abra a existente e adicione a oferta nela. |
+| Depois de zerar, o site e o painel ainda mostram “Exemplo” / “Demonstração” | Versão antiga do site (antes de 28/09). Feche o site (Ctrl+C), baixe o ZIP de novo (passo 3), copie o arquivo `.env.local` da pasta antiga para a nova, rode `npm install`, `npm run db:zerar` e `npm run dev`. |
 | O site não abre em localhost:3000 | Veja se a janela do `npm run dev` ainda está aberta. Se fechou, rode `npm run dev` de novo. |
 | “Port 3000 is in use” | Já tem um site aberto em outra janela. Feche-a ou use o endereço que o terminal mostrar. |
 | Esqueci a senha do painel | Rode `npm run configurar` de novo e crie outra. |

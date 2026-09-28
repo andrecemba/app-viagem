@@ -15,8 +15,9 @@ import type { Db } from "./util";
 
 export { nowIso, parseJson, type Db } from "./util";
 
+/** Variável vazia (`DATABASE_PATH=` no .env.local) conta como não definida: usa o arquivo padrão. */
 export function databasePath() {
-  return process.env.DATABASE_PATH ?? path.join(process.cwd(), ".data", "racao.db");
+  return process.env.DATABASE_PATH?.trim() || path.join(process.cwd(), ".data", "racao.db");
 }
 
 export function migrationsDir() {

@@ -6,12 +6,15 @@
  *   npm run db:zerar        apaga TODOS os produtos, ofertas e acessos (as lojas ficam) — pede confirmação
  *   npm run precos:atualizar  roda a atualização programada de preços (o mesmo que /api/cron/precos)
  */
-import { rmSync } from "node:fs";
+import { existsSync, rmSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 
 import { databasePath, getDb, migrate, openDb } from "../src/lib/db";
 import { removeDemo } from "../src/lib/db/seed";
 import { syncAll } from "../src/lib/integrations/sync";
+
+// Mesmas variáveis que o site (npm run dev) lê, para os comandos mexerem no mesmo banco.
+if (existsSync(".env.local")) process.loadEnvFile(".env.local");
 
 const cmd = process.argv[2];
 
@@ -26,6 +29,7 @@ async function main() {
       break;
     }
     case "reset": {
+      process.env.SEED_DEMO = "1"; // reset é para ver o site com os exemplos
       for (const f of [databasePath(), `${databasePath()}-wal`, `${databasePath()}-shm`]) rmSync(f, { force: true });
       const db = getDb();
       const count = (db.prepare("SELECT COUNT(*) AS n FROM products").get() as { n: number }).n;
@@ -43,12 +47,14 @@ async function main() {
         break;
       }
       const db = getDb();
+      const before = (db.prepare("SELECT COUNT(*) AS n FROM products").get() as { n: number }).n;
       db.transaction(() => {
         for (const t of ["offer_overrides", "offer_events", "shipping_quotes", "offers", "price_alert_requests", "analytics_events", "products", "sync_runs"]) {
           db.prepare(`DELETE FROM ${t}`).run();
         }
       })();
-      console.log("Pronto: catálogo vazio. Cadastre os produtos pelo painel (/admin).");
+      console.log(`Pronto: ${before} produtos apagados de ${databasePath()}. Catálogo vazio.`);
+      console.log("Se o site estiver aberto, feche (Ctrl+C) e rode npm run dev de novo. Depois cadastre pelo painel (/admin).");
       break;
     }
     case "sem-exemplos":

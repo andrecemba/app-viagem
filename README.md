@@ -24,8 +24,10 @@ npm run configurar   # pergunta e-mail e senha do painel e cria o .env.local (se
 npm run dev          # http://localhost:3000  ·  painel: /admin
 ```
 
-Na primeira abertura o banco (`.data/racao.db`) é criado com as migrações, as 6 lojas, as rações reais do cadastro inicial
-e os **dados de exemplo** (produtos e ofertas marcados `is_demo`, com selo “Exemplo” no site). `SEED_DEMO=0` cria sem exemplos.
+Na primeira abertura o banco (`.data/racao.db`) é criado com as migrações, as 6 lojas e as rações reais do cadastro inicial
+(sem preço). Os **dados de exemplo** (produtos e ofertas marcados `is_demo`, com selo “Exemplo” no site) só entram com
+`SEED_DEMO=1` ou com `npm run db:reset`; o `.env.example` já vem com `SEED_DEMO=0`.
+Os comandos `npm run db:*` leem o mesmo `.env.local` do site, então mexem no mesmo banco.
 O cadastro inicial roda uma única vez; depois de `db:zerar` o catálogo continua vazio.
 
 Guia para quem não é técnico (zerar e cadastrar rações do Mercado Livre): [`docs/PASSO-A-PASSO.md`](docs/PASSO-A-PASSO.md).
@@ -34,7 +36,7 @@ Guia para quem não é técnico (zerar e cadastrar rações do Mercado Livre): [
 |---|---|
 | `npm run db:migrate` | aplica migrações pendentes |
 | `npm run db:zerar` | apaga todos os produtos, ofertas e acessos (lojas ficam); pede confirmação |
-| `npm run db:reset` | recria o banco local do zero, com o cadastro inicial e os exemplos |
+| `npm run db:reset` | recria o banco local do zero, com o cadastro inicial e os exemplos (sempre com exemplos) |
 | `npm run db:sem-exemplos` | remove produtos e ofertas de exemplo (também há botão em Produtos) |
 | `npm run precos:atualizar` | roda a atualização de preços uma vez |
 | `npm test` · `npm run lint` · `npm run typecheck` · `npm run build` | verificações |
