@@ -18,9 +18,10 @@ import { saveSettings } from "@/lib/domain/settings";
 import { getStore, listStores, saveStore } from "@/lib/domain/stores";
 import { OVERRIDABLE_FIELDS, type Availability, type DataSource, type OfferValues, type OverridableField, type PriceDisplay, type StoreMode } from "@/lib/domain/types";
 import { ValidationError } from "@/lib/domain/validation";
-import { importCatalogCsv, type ImportRowResult, type ListingLookup } from "@/lib/domain/catalog-import";
+import { importCatalogRows, type ImportRowResult, type ListingLookup } from "@/lib/domain/catalog-import";
 import { sourceForStore } from "@/lib/integrations";
-import { importOffersCsv } from "@/lib/integrations/csv";
+import { importOffersCsv, parseCsv } from "@/lib/integrations/csv";
+import { isXlsx, readXlsxRows } from "@/lib/integrations/xlsx";
 import { refreshOffer, syncStore } from "@/lib/integrations/sync";
 
 /* Toda ação: 1) confere a sessão, 2) valida a entrada, 3) grava, 4) volta com aviso ou erro. */
@@ -407,13 +408,22 @@ export interface ImportState {
 export async function importCatalogAction(_prev: ImportState, formData: FormData): Promise<ImportState> {
   const { actor } = await requireAdmin();
   const file = formData.get("arquivo");
-  const pasted = text(formData, "texto");
-  let content = pasted;
+  let rows: Record<string, string>[];
   if (file instanceof File && file.size > 0) {
-    if (file.size > 2_000_000) return { error: "Arquivo grande demais (máximo 2 MB)." };
-    content = await file.text();
+    if (file.size > 5_000_000) return { error: "Arquivo grande demais (máximo 5 MB)." };
+    if (/\.(xls|ods|numbers)$/i.test(file.name)) return { error: "Formato não aceito. No Excel ou Google Planilhas, baixe/salve como .xlsx ou .csv." };
+    const data = Buffer.from(await file.arrayBuffer());
+    try {
+      rows = isXlsx(data) ? readXlsxRows(data) : parseCsv(data.toString("utf8"));
+    } catch (e) {
+      return { error: `Não consegui ler a planilha (${e instanceof Error ? e.message : "formato desconhecido"}). Salve de novo como .xlsx ou .csv.` };
+    }
+  } else {
+    const pasted = text(formData, "texto");
+    if (!pasted.trim()) return { error: "Escolha o arquivo (.xlsx ou .csv) ou cole o conteúdo." };
+    // Colado do Excel/Planilhas vem separado por tabulação.
+    rows = parseCsv(pasted.includes("\t") ? pasted.replace(/\t/g, ";") : pasted);
   }
-  if (!content.trim()) return { error: "Escolha o arquivo .csv (ou cole o conteúdo)." };
   const db = getDb();
   const lookup: ListingLookup = async (store, externalId) => {
     const src = sourceForStore(store, db);
@@ -421,7 +431,7 @@ export async function importCatalogAction(_prev: ImportState, formData: FormData
     return src.fetchListing(externalId);
   };
   try {
-    const results = await importCatalogCsv(db, content, actor, lookup);
+    const results = await importCatalogRows(db, rows, actor, lookup);
     refresh();
     return { results };
   } catch (e) {

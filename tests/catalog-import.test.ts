@@ -4,10 +4,11 @@ import { describe, expect, it, vi } from "vitest";
 
 import { migrate, openDb } from "@/lib/db";
 import { ensureSeed } from "@/lib/db/seed";
-import { importCatalogCsv, parseWeight } from "@/lib/domain/catalog-import";
+import { importCatalogCsv, importCatalogRows, parseWeight } from "@/lib/domain/catalog-import";
 import { getOffer } from "@/lib/domain/offers";
 import { getProduct } from "@/lib/domain/products";
 import type { NormalizedListing } from "@/lib/integrations/types";
+import { isXlsx, readXlsxRows } from "@/lib/integrations/xlsx";
 
 vi.mock("server-only", () => ({}));
 
@@ -95,6 +96,26 @@ describe("importação de planilha", () => {
     });
     expect(r.productId).toBeNull();
     expect(r.messages.join(" ")).toMatch(/não respondeu/);
+  });
+
+  it("lê .xlsx do Google Planilhas e não cria produto para anúncio repetido", async () => {
+    const data = readFileSync("tests/fixtures/planilha-google.xlsx");
+    expect(isXlsx(data)).toBe(true);
+    const rows = readXlsxRows(data);
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({ especie: "Cachorro", marca: "Fórmula Natural", peso: "2,5kg", id_anuncio: "MLB7125580428", link_afiliado: "https://meli.la/17cvoar" });
+    expect(rows[0].link_anuncio).toContain("#polycard_client=affiliates&wid=MLB7125580428");
+    expect(rows[1].preco).toBe("99");
+
+    const db = emptyDb();
+    const [first, second] = await importCatalogRows(db, rows, "teste");
+    expect(first.productId).not.toBeNull();
+    expect(getProduct(db, first.productId!)).toMatchObject({ weightGrams: 2500, flavor: "Frango e mandioca", foodType: null });
+    expect(first.messages.join(" ")).toMatch(/Tipo “protetor da saúde bucal” não reconhecido/);
+    expect(first.pending).toContain("preço");
+    expect(second.status).toBe("ja_existia");
+    expect(second.messages.join(" ")).toMatch(/já está cadastrado em/);
+    expect((db.prepare("SELECT COUNT(*) AS n FROM products").get() as { n: number }).n).toBe(1);
   });
 
   it("recusa espécie desconhecida e cabeçalho errado", async () => {

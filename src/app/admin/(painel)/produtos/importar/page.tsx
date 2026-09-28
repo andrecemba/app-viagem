@@ -27,7 +27,8 @@ export default async function ImportPage() {
           <a href="/modelo-importacao.csv" download className="font-medium underline underline-offset-4">
             Baixar o modelo (.csv)
           </a>{" "}
-          e abrir no Excel ou no Google Planilhas. Salve como <strong>CSV</strong> (separado por ponto e vírgula ou vírgula).
+          e abrir no Excel ou no Google Planilhas. Pode enviar o arquivo <strong>.xlsx</strong> direto (no Google Planilhas: Arquivo → Fazer
+          download → Microsoft Excel) ou salvar como <strong>.csv</strong>. Só a primeira aba é lida.
         </p>
         <ul className="list-disc space-y-1 pl-5 text-muted-foreground">
           <li>

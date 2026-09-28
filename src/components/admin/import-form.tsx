@@ -24,11 +24,11 @@ export function ImportForm() {
     <div className="space-y-4">
       <form action={action} className="space-y-3 rounded-lg border p-4">
         <label className="block text-sm font-semibold" htmlFor="arquivo">
-          Arquivo .csv
+          Planilha (.xlsx do Excel ou Google Planilhas, ou .csv)
         </label>
-        <input id="arquivo" name="arquivo" type="file" accept=".csv,text/csv,text/plain" className={input + " h-auto py-1.5"} />
+        <input id="arquivo" name="arquivo" type="file" accept=".xlsx,.csv,text/csv,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" className={input + " h-auto py-1.5"} />
         <details className="text-sm">
-          <summary className="cursor-pointer text-muted-foreground">Ou cole o conteúdo da planilha</summary>
+          <summary className="cursor-pointer text-muted-foreground">Ou copie as células da planilha (com o cabeçalho) e cole aqui</summary>
           <textarea name="texto" rows={5} className={input + " mt-2 h-auto py-2 font-mono text-xs"} placeholder="especie;marca;linha;indicacao;sabor;peso;..." />
         </details>
         <button type="submit" disabled={pending} className={btn.primary}>

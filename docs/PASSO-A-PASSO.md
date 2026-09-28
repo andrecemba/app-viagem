@@ -305,7 +305,9 @@ Em vez de cadastrar uma a uma, dá para montar uma planilha e importar tudo de u
 
 3. **Não preencha nada que não conferiu no anúncio.** O que ficar vazio aparece como **“Pendente de verificação”**.
    Sem **espécie, marca, indicação, peso e link do anúncio** a linha não é importada (para não criar a ração errada).
-4. Salve como **CSV** (Excel: *Arquivo → Salvar como → CSV UTF-8*). Em **Importar planilha**, escolha o arquivo e clique em **Importar**.
+4. Envie a planilha do jeito que ela está: **.xlsx** serve (Excel: *Salvar*; Google Planilhas: *Arquivo → Fazer download → Microsoft Excel (.xlsx)*).
+   CSV também serve. Só a **primeira aba** é lida. Em **Importar planilha**, escolha o arquivo e clique em **Importar**.
+   Cada anúncio vale para uma ração só: repetir o mesmo link em outra linha não cria nada.
 5. O resultado mostra cada linha: **Importado**, **Pendente de verificação** (com o que falta), **Já cadastrado** ou **Erro**.
    Pode importar o mesmo arquivo de novo depois de completar: o que já existe não é duplicado.
 
@@ -326,6 +328,7 @@ Preço, disponibilidade, frete grátis, peso, sabor e foto vêm do anúncio ofic
 | “O link de afiliado não é de Mercado Livre…” | Confira se colou o link de afiliado do Mercado Livre, e não de outra loja. |
 | “Já existe um produto com a mesma espécie, marca…” | A ração já está cadastrada. Abra a existente e adicione a oferta nela. |
 | Depois de zerar, o site e o painel ainda mostram “Exemplo” / “Demonstração” | Versão antiga do site (antes de 28/09). Feche o site (Ctrl+C), baixe o ZIP de novo (passo 3), copie o arquivo `.env.local` da pasta antiga para a nova, rode `npm install`, `npm run db:zerar` e `npm run dev`. |
+| Não aparece o botão **Importar planilha** em Produtos | Versão antiga do site. Baixe o ZIP de novo (passo 3), copie o `.env.local` e a pasta `.data` da pasta antiga para a nova e rode `npm install`. |
 | O site não abre em localhost:3000 | Veja se a janela do `npm run dev` ainda está aberta. Se fechou, rode `npm run dev` de novo. |
 | “Port 3000 is in use” | Já tem um site aberto em outra janela. Feche-a ou use o endereço que o terminal mostrar. |
 | Esqueci a senha do painel | Rode `npm run configurar` de novo e crie outra. |

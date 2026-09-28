@@ -94,8 +94,12 @@ export function parseWeight(value: string): number | null {
   return weightFromTitle(v);
 }
 
-export async function importCatalogCsv(db: Db, text: string, actor: string, lookup?: ListingLookup): Promise<ImportRowResult[]> {
-  const rows = parseCsv(text);
+export function importCatalogCsv(db: Db, text: string, actor: string, lookup?: ListingLookup): Promise<ImportRowResult[]> {
+  return importCatalogRows(db, parseCsv(text), actor, lookup);
+}
+
+/** Linhas já lidas (de CSV ou de planilha do Excel), com o cabeçalho em minúsculas. */
+export async function importCatalogRows(db: Db, rows: Record<string, string>[], actor: string, lookup?: ListingLookup): Promise<ImportRowResult[]> {
   if (!rows.length) throw new ValidationError("O arquivo está vazio.");
   const missing = ["especie", "marca", "indicacao", "peso", "link_anuncio"].filter((c) => !(c in rows[0]));
   if (missing.length) throw new ValidationError(`Faltam colunas no cabeçalho: ${missing.join(", ")}. Use o modelo da página.`);
@@ -134,12 +138,15 @@ export async function importCatalogCsv(db: Db, text: string, actor: string, look
       // ── Produto ──
       const species = pick(row.especie ?? "", SPECIES);
       if (species === undefined) throw new ValidationError(`Espécie “${row.especie}” não reconhecida (use Cachorro ou Gato).`);
-      const lifeStage = pick(row.idade ?? "", LIFE);
-      if (lifeStage === undefined) throw new ValidationError(`Idade “${row.idade}” não reconhecida (filhote, adulto, sênior ou todas).`);
-      const size = pick(row.porte ?? "", SIZES);
-      if (size === undefined) throw new ValidationError(`Porte “${row.porte}” não reconhecido (mini, pequeno, médio, grande, mini e pequeno, médio e grande ou todos).`);
-      const foodType = pick(row.tipo ?? "", FOOD);
-      if (foodType === undefined) throw new ValidationError(`Tipo “${row.tipo}” não reconhecido (seca, natural, úmida ou medicamentosa).`);
+      // Idade, porte e tipo só ajudam nos filtros: valor desconhecido fica em branco, com aviso.
+      const optional = <T extends string>(value: string | undefined, map: Record<string, T>, what: string, options: string) => {
+        const v = pick(value ?? "", map);
+        if (v === undefined) r.messages.push(`${what} “${value}” não reconhecido: deixado em branco (use ${options}).`);
+        return v ?? null;
+      };
+      const lifeStage = optional(row.idade, LIFE, "Idade", "filhote, adulto, sênior ou todas");
+      const size = optional(row.porte, SIZES, "Porte", "mini, pequeno, médio, grande, mini e pequeno, médio e grande ou todos");
+      const foodType = optional(row.tipo, FOOD, "Tipo", "seca, natural, úmida ou medicamentosa");
 
       let weight = parseWeight(row.peso ?? "");
       if (row.peso?.trim() && weight == null) throw new ValidationError(`Peso “${row.peso}” não entendido (ex.: 2,5 kg ou 800 g).`);
@@ -173,9 +180,9 @@ export async function importCatalogCsv(db: Db, text: string, actor: string, look
         weightGrams: weight,
         unitCount: null,
         neutered: parseBool(row.castrado) === true,
-        lifeStage: lifeStage ?? null,
-        size: size ?? null,
-        foodType: foodType ?? null,
+        lifeStage,
+        size,
+        foodType,
         needs: parseBool(row.castrado) === true ? ["castrados"] : [],
         gtin: row.gtin?.trim() || null,
         imageUrl: listing?.imageUrl ?? null,
@@ -202,20 +209,30 @@ export async function importCatalogCsv(db: Db, text: string, actor: string, look
 
       db.transaction(() => {
         const existing = db.prepare("SELECT id FROM products WHERE identity_key = ?").get(identityKey(input)) as { id: number } | undefined;
+        // Anúncio já cadastrado (em qualquer produto): não cria nada, nem o produto.
+        const dup = (
+          externalId
+            ? db.prepare("SELECT id, product_id FROM offers WHERE store_id = ? AND external_id = ?").get(store.id, externalId)
+            : existing
+              ? db.prepare("SELECT id, product_id FROM offers WHERE product_id = ? AND store_id = ? AND url = ?").get(existing.id, store.id, url)
+              : undefined
+        ) as { id: number; product_id: number } | undefined;
+        if (dup) {
+          const owner = getProduct(db, dup.product_id)!;
+          r.status = "ja_existia";
+          r.offerId = dup.id;
+          r.productId = owner.id;
+          r.pending = [];
+          r.messages.push(
+            owner.id === existing?.id
+              ? "Este anúncio já estava cadastrado neste produto: nada foi alterado."
+              : `Este anúncio${externalId ? ` (${externalId})` : ""} já está cadastrado em “${productName(owner)}”: linha ignorada. Um anúncio vale para uma ração só.`,
+          );
+          return;
+        }
         const product = existing ? getProduct(db, existing.id)! : saveProduct(db, null, input);
         r.productId = product.id;
         r.label = productName(product);
-        const dup = (
-          externalId
-            ? db.prepare("SELECT id FROM offers WHERE store_id = ? AND external_id = ?").get(store.id, externalId)
-            : db.prepare("SELECT id FROM offers WHERE product_id = ? AND store_id = ? AND url = ?").get(product.id, store.id, url)
-        ) as { id: number } | undefined;
-        if (dup) {
-          r.status = "ja_existia";
-          r.offerId = dup.id;
-          r.messages.push(`Este anúncio já estava cadastrado${existing ? "" : " (produto novo criado)"}: nada foi alterado na oferta.`);
-          return;
-        }
         const offer = createOffer(
           db,
           {
