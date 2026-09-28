@@ -18,6 +18,8 @@ type Quote = { status: "cotado"; cost: number; deadlineDays: number | null; quot
 type Sort = "menor-preco" | "preco-kg" | "recentes" | "preco-frete";
 
 const CEP_KEY = "racao:cep";
+/** Barra "Seu CEP (para o frete)": false = oculta. A cotação continua no código para religar. */
+const SHOW_CEP = false;
 
 const formatCep = (c: string) => `${c.slice(0, 5)}-${c.slice(5)}`;
 
@@ -35,6 +37,7 @@ export function OfferList({ item, staleHours }: { item: ComparatorItem; staleHou
 
   // CEP lembrado só neste navegador: consulta de novo ao abrir a página.
   useEffect(() => {
+    if (!SHOW_CEP) return;
     let saved: string | null = null;
     try {
       saved = localStorage.getItem(CEP_KEY);
@@ -98,40 +101,44 @@ export function OfferList({ item, staleHours }: { item: ComparatorItem; staleHou
 
   return (
     <div>
-      <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <form
-          className="flex items-end gap-2"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void quote(cepInput);
-          }}
-        >
-          <label className="space-y-1 text-sm">
-            <span className="flex items-center gap-1 font-medium">
-              <MapPin className="size-4" aria-hidden /> Seu CEP (para o frete)
-            </span>
-            <input
-              value={cepInput}
-              onChange={(e) => setCepInput(e.target.value.replace(/[^\d-]/g, "").slice(0, 9))}
-              inputMode="numeric"
-              autoComplete="postal-code"
-              placeholder="00000-000"
-              className="h-10 w-36 rounded-md border border-input bg-card px-3 tabular-nums outline-none focus:border-foreground"
-            />
-          </label>
-          <button type="submit" disabled={loading} className="h-10 rounded-md border bg-card px-3 text-sm font-medium hover:border-foreground/40 disabled:opacity-60">
-            {loading ? "Consultando…" : "Consultar frete"}
-          </button>
-        </form>
+      <div className={`mb-3 flex flex-col gap-3 sm:flex-row sm:items-end ${SHOW_CEP ? "sm:justify-between" : "sm:justify-end"}`}>
+        {SHOW_CEP && (
+          <form
+            className="flex items-end gap-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void quote(cepInput);
+            }}
+          >
+            <label className="space-y-1 text-sm">
+              <span className="flex items-center gap-1 font-medium">
+                <MapPin className="size-4" aria-hidden /> Seu CEP (para o frete)
+              </span>
+              <input
+                value={cepInput}
+                onChange={(e) => setCepInput(e.target.value.replace(/[^\d-]/g, "").slice(0, 9))}
+                inputMode="numeric"
+                autoComplete="postal-code"
+                placeholder="00000-000"
+                className="h-10 w-36 rounded-md border border-input bg-card px-3 tabular-nums outline-none focus:border-foreground"
+              />
+            </label>
+            <button type="submit" disabled={loading} className="h-10 rounded-md border bg-card px-3 text-sm font-medium hover:border-foreground/40 disabled:opacity-60">
+              {loading ? "Consultando…" : "Consultar frete"}
+            </button>
+          </form>
+        )}
         <label className="flex items-center gap-2 text-sm text-muted-foreground">
           Ordenar por
           <select value={effectiveSort} onChange={(e) => setSort(e.target.value as Sort)} className="h-10 rounded-md border border-input bg-card px-2 text-foreground">
             <option value="menor-preco">Menor preço</option>
             <option value="preco-kg">Menor preço por kg</option>
             <option value="recentes">Atualização mais recente</option>
-            <option value="preco-frete" disabled={!hasQuotes}>
-              Preço + frete{hasQuotes ? "" : " (precisa de cotação)"}
-            </option>
+            {SHOW_CEP && (
+              <option value="preco-frete" disabled={!hasQuotes}>
+                Preço + frete{hasQuotes ? "" : " (precisa de cotação)"}
+              </option>
+            )}
           </select>
         </label>
       </div>
