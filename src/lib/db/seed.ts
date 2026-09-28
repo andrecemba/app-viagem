@@ -8,15 +8,21 @@ import type { Product } from "@/lib/domain/types";
 
 import type { Db } from "./util";
 
-/** Lojas iniciais sempre; catálogo e dados de exemplo só na primeira abertura (SEED_DEMO=0 desliga os exemplos). */
+/**
+ * Cadastro inicial: roda uma única vez, quando o banco é criado (fica marcado em
+ * settings). Depois de "npm run db:zerar" o catálogo continua vazio.
+ * SEED_DEMO=0 cria sem os dados de exemplo.
+ */
 export function ensureSeed(db: Db) {
-  const hasStores = db.prepare("SELECT 1 FROM stores LIMIT 1").get();
-  if (!hasStores) for (const s of INITIAL_STORES) saveStore(db, s, true);
-  const hasProducts = db.prepare("SELECT 1 FROM products LIMIT 1").get();
-  if (!hasProducts) {
-    seedRealProducts(db);
-    if (process.env.SEED_DEMO !== "0") seedDemo(db);
-  }
+  if (db.prepare("SELECT 1 FROM settings WHERE key = 'seeded'").get()) return;
+  db.transaction(() => {
+    if (!db.prepare("SELECT 1 FROM stores LIMIT 1").get()) for (const s of INITIAL_STORES) saveStore(db, s, true);
+    if (!db.prepare("SELECT 1 FROM products LIMIT 1").get()) {
+      seedRealProducts(db);
+      if (process.env.SEED_DEMO !== "0") seedDemo(db);
+    }
+    db.prepare("INSERT INTO settings (key, value) VALUES ('seeded', ?)").run(JSON.stringify(new Date().toISOString()));
+  })();
 }
 
 /**

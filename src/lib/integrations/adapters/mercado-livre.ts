@@ -46,11 +46,15 @@ export function parseMercadoLivreUrl(url: string) {
   } catch {
     return { externalId: null, hint: "URL inválida." };
   }
-  const fromQuery = u.searchParams.get("wid") ?? u.searchParams.get("item_id");
+  // Página de catálogo às vezes traz o anúncio escolhido: ?wid=MLB..., ?item_id=MLB... ou pdp_filters=item_id:MLB...
+  const fromQuery = u.searchParams.get("wid") ?? u.searchParams.get("item_id") ?? u.searchParams.get("pdp_filters")?.match(/item_id:(MLB\d+)/i)?.[1] ?? null;
   const m = (fromQuery ?? u.pathname).match(/MLB-?(\d{6,})/i);
   if (m && !(u.pathname.includes("/p/") && !fromQuery)) return { externalId: `MLB${m[1]}` };
   if (u.pathname.includes("/p/")) {
-    return { externalId: null, hint: "Este é um link de página de catálogo (/p/…), que junta vários vendedores. Abra o anúncio do vendedor e cole o link dele, ou digite o ID MLB do anúncio." };
+    return {
+      externalId: null,
+      hint: "Link de página de catálogo (/p/…), que junta vários vendedores. Para oferta manual pode deixar sem ID; para usar a API depois, abra o anúncio do vendedor e cole o link dele (ou digite o ID MLB).",
+    };
   }
   return { externalId: null, hint: "Não encontramos o ID do anúncio (MLB…). Digite-o no campo abaixo." };
 }

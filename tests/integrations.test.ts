@@ -117,3 +117,10 @@ describe("registro de erros", () => {
     expect(redact("GET /x?access_token=abc123&y=1 Authorization: Bearer eyJhbGci.x")).toBe("GET /x?access_token=***&y=1 Authorization: Bearer ***");
   });
 });
+
+describe("links do Mercado Livre copiados do navegador", () => {
+  it("entende o anúncio escolhido dentro da página de catálogo", () => {
+    expect(parseMercadoLivreUrl("https://www.mercadolivre.com.br/racao/p/MLB12345678?pdp_filters=item_id%3AMLB3344556677").externalId).toBe("MLB3344556677");
+    expect(parseMercadoLivreUrl("https://www.mercadolivre.com.br/racao/up/MLBU123456789?pdp_filters=item_id:MLB998877665").externalId).toBe("MLB998877665");
+  });
+});

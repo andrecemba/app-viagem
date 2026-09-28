@@ -82,6 +82,14 @@ describe("cadastro inicial", () => {
     expect(offers.every((o) => o.is_demo === 1)).toBe(true);
   });
 
+  it("o cadastro inicial roda uma vez só: catálogo zerado continua vazio", () => {
+    const db = freshDb(true);
+    db.prepare("DELETE FROM offers").run();
+    db.prepare("DELETE FROM products").run();
+    ensureSeed(db);
+    expect((db.prepare("SELECT COUNT(*) AS n FROM products").get() as { n: number }).n).toBe(0);
+  });
+
   it("a Amazon só mostra preço vindo da API oficial", () => {
     const db = freshDb();
     expect(getStore(db, "amazon")!.priceDisplay).toBe("somente_api");

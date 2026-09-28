@@ -383,6 +383,7 @@ export function Comparator({
             </ul>
           ) : (
             <EmptyState
+              catalogEmpty={items.length === 0}
               search={search}
               filters={filters}
               onClearFilters={clearFilters}
@@ -587,17 +588,27 @@ function SearchNotice({
 }
 
 function EmptyState({
+  catalogEmpty,
   search,
   filters,
   onClearFilters,
   onClearAll,
 }: {
+  catalogEmpty: boolean;
   search: SearchResult;
   filters: FilterState;
   onClearFilters: () => void;
   onClearAll: () => void;
 }) {
   const noSearchMatch = search.mode === "none";
+  if (catalogEmpty) {
+    return (
+      <div className="mt-4 rounded-lg border px-5 py-10 text-center sm:px-10">
+        <h3 className="font-display text-lg font-semibold">Ainda não há rações no comparador</h3>
+        <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">Estamos cadastrando as primeiras rações e lojas. Volte em breve.</p>
+      </div>
+    );
+  }
   return (
     <div className="mt-4 rounded-lg border px-5 py-10 text-center sm:px-10">
       <h3 className="font-display text-lg font-semibold">

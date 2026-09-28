@@ -20,20 +20,21 @@ troque o banco por Postgres mantendo as mesmas tabelas (`db/migrations`).
 
 ```bash
 npm install
-cp .env.example .env.local
-npm run admin:hash-senha -- "uma senha longa"   # cole em ADMIN_PASSWORD_HASH
-openssl rand -base64 48                            # ADMIN_SESSION_SECRET
-openssl rand -hex 24                               # CRON_SECRET
-npm run dev                                        # http://localhost:3000  ·  painel: /admin
+npm run configurar   # pergunta e-mail e senha do painel e cria o .env.local (segredos gerados sozinhos)
+npm run dev          # http://localhost:3000  ·  painel: /admin
 ```
 
 Na primeira abertura o banco (`.data/racao.db`) é criado com as migrações, as 6 lojas, as rações reais do cadastro inicial
 e os **dados de exemplo** (produtos e ofertas marcados `is_demo`, com selo “Exemplo” no site). `SEED_DEMO=0` cria sem exemplos.
+O cadastro inicial roda uma única vez; depois de `db:zerar` o catálogo continua vazio.
+
+Guia para quem não é técnico (zerar e cadastrar rações do Mercado Livre): [`docs/PASSO-A-PASSO.md`](docs/PASSO-A-PASSO.md).
 
 | Comando | O que faz |
 |---|---|
 | `npm run db:migrate` | aplica migrações pendentes |
-| `npm run db:reset` | recria o banco local do zero |
+| `npm run db:zerar` | apaga todos os produtos, ofertas e acessos (lojas ficam); pede confirmação |
+| `npm run db:reset` | recria o banco local do zero, com o cadastro inicial e os exemplos |
 | `npm run db:sem-exemplos` | remove produtos e ofertas de exemplo (também há botão em Produtos) |
 | `npm run precos:atualizar` | roda a atualização de preços uma vez |
 | `npm test` · `npm run lint` · `npm run typecheck` · `npm run build` | verificações |

@@ -3,9 +3,11 @@
  *   npm run db:migrate      aplica migrações pendentes (e cria o cadastro inicial se o banco estiver vazio)
  *   npm run db:reset        apaga o banco local e recria com o cadastro inicial e os exemplos
  *   npm run db:sem-exemplos remove produtos e ofertas de exemplo
+ *   npm run db:zerar        apaga TODOS os produtos, ofertas e acessos (as lojas ficam) — pede confirmação
  *   npm run precos:atualizar  roda a atualização programada de preços (o mesmo que /api/cron/precos)
  */
 import { rmSync } from "node:fs";
+import { createInterface } from "node:readline/promises";
 
 import { databasePath, getDb, migrate, openDb } from "../src/lib/db";
 import { removeDemo } from "../src/lib/db/seed";
@@ -30,6 +32,25 @@ async function main() {
       console.log(`Banco recriado em ${databasePath()} com ${count} produtos.`);
       break;
     }
+    case "zerar": {
+      const rl = createInterface({ input: process.stdin, output: process.stdout });
+      console.log("\nIsto apaga TODOS os produtos, ofertas, históricos, pedidos de aviso e acessos registrados.");
+      console.log("As lojas e as configurações continuam. Não dá para desfazer.\n");
+      const answer = (await rl.question('Para confirmar, digite ZERAR e aperte Enter: ')).trim();
+      rl.close();
+      if (answer !== "ZERAR") {
+        console.log("Cancelado. Nada foi apagado.");
+        break;
+      }
+      const db = getDb();
+      db.transaction(() => {
+        for (const t of ["offer_overrides", "offer_events", "shipping_quotes", "offers", "price_alert_requests", "analytics_events", "products", "sync_runs"]) {
+          db.prepare(`DELETE FROM ${t}`).run();
+        }
+      })();
+      console.log("Pronto: catálogo vazio. Cadastre os produtos pelo painel (/admin).");
+      break;
+    }
     case "sem-exemplos":
       removeDemo(getDb());
       console.log("Produtos e ofertas de exemplo removidos.");
@@ -40,7 +61,7 @@ async function main() {
       break;
     }
     default:
-      console.log("Uso: tsx scripts/db.ts migrate | reset | sem-exemplos | sync");
+      console.log("Uso: tsx scripts/db.ts migrate | reset | zerar | sem-exemplos | sync");
       process.exitCode = 1;
   }
 }
