@@ -138,5 +138,8 @@ describe("codeFromRedirect (npm run ml:conectar)", () => {
     expect(codeFromRedirect("  TG-abc123-99  ")).toBe("TG-abc123-99");
     expect(codeFromRedirect("https://www.google.com.br/")).toBeNull();
     expect(codeFromRedirect("qualquer coisa")).toBeNull();
+    // colado sem o "TG-" ou com o "?code=" do DevTools
+    expect(codeFromRedirect("6aba8e6e63b23900015336f6-245781296")).toBe("TG-6aba8e6e63b23900015336f6-245781296");
+    expect(codeFromRedirect("?code=TG-6aba8e6e63b23900015336f6-245781296")).toBe("TG-6aba8e6e63b23900015336f6-245781296");
   });
 });

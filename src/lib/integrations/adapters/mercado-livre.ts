@@ -71,7 +71,11 @@ export function codeFromRedirect(input: string): string | null {
   } catch {
     /* não é URL: pode ser o código puro */
   }
-  return /^TG-[\w-]+$/.test(text) ? text : null;
+  // "?code=TG-…" (copiado do DevTools) ou só o código, com ou sem o "TG-" na frente.
+  const bare = text.replace(/^[?&]?code=/i, "");
+  if (/^TG-[\w-]+$/i.test(bare)) return `TG-${bare.slice(3)}`;
+  if (/^[0-9a-f]{20,}-\d+$/i.test(bare)) return `TG-${bare}`;
+  return null;
 }
 
 export function createMercadoLivreSource(deps: MercadoLivreDeps): OfferSource {
