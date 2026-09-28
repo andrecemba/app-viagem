@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { findCatalogProduct, getCatalog } from "@/lib/data";
+import { findCatalogProduct, getCatalog } from "@/lib/catalog/public";
+import { getDb } from "@/lib/db";
 import { FILTER_DIMENSIONS, isAutomated, sanitizeQuery, snapshotOf } from "@/lib/analytics/sanitize";
 import { rateLimited, recordEvent } from "@/lib/analytics/store";
 import type { AnalyticsEvent } from "@/lib/analytics/types";
@@ -43,6 +44,6 @@ export async function POST(request: NextRequest) {
   }
 
   if (!event) return new NextResponse(null, { status: 400 });
-  await recordEvent(event);
+  recordEvent(getDb(), event);
   return new NextResponse(null, { status: 204 });
 }

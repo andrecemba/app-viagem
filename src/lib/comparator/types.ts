@@ -1,3 +1,4 @@
+import type { Availability } from "@/lib/domain/types";
 import type { FilterSize, FoodType, LifeStage, Need, Species } from "@/lib/catalog/vocab";
 
 /** Tipos de alimento exibidos nos filtros do comparador, na ordem da interface. */
@@ -8,36 +9,51 @@ export interface ComparatorBrand {
   name: string;
   color: string;
   initials: string;
-  /** Logotipo autorizado (arquivo em public/marcas); null = selo com iniciais. */
+  /** Logotipo autorizado; null = selo com iniciais. */
   logo: string | null;
 }
 
-/** Oferta de uma loja para a embalagem exata. Não carrega comissão nem URL de afiliado. */
+/** Oferta pública de uma loja para a embalagem exata. Nunca carrega URL de afiliado nem segredo. */
 export interface ComparatorOffer {
   id: string;
   storeSlug: string;
   storeName: string;
+  storeColor: string;
+  storeLogo: string | null;
   sellerName: string;
-  price: number;
+  /** null = sem preço público (ex.: Amazon sem API aprovada). */
+  price: number | null;
+  priceObtainedAt: string | null;
+  /** Preço anterior registrado por nós (com a data em que valia). */
+  previousPrice: number | null;
+  previousPriceAt: string | null;
   pixPrice: number | null;
-  freeShipping: boolean;
+  availability: Availability;
   inStock: boolean;
+  /** Indicação geral do anúncio (não é cotação para o CEP). */
+  freeShipping: boolean | null;
+  listingWeightGrams: number | null;
+  listingFlavor: string | null;
+  stale: boolean;
+  isDemo: boolean;
+  /** Motivo de não mostrar preço (regra da loja). */
+  priceHiddenReason: string | null;
   lastCheckedAt: string;
 }
 
 /**
- * Um item do comparador = uma combinação exata de fórmula, sabor e peso.
- * Embalagens de pesos diferentes são itens diferentes, agrupados pela `family`.
+ * Um item do comparador = uma ração exata (espécie, marca, linha, indicação,
+ * sabor e peso). Pesos diferentes são itens diferentes, agrupados pela `family`.
  */
 export interface ComparatorItem {
   id: string;
   slug: string;
-  /** Mesma fórmula e sabor, pesos diferentes. */
   family: string;
   brand: ComparatorBrand;
   lineName: string;
-  /** Nome da fórmula, sem o peso. */
+  /** Linha + indicação, sem o peso. Ex.: "Golden Fórmula Cães Adultos Raças Médias". */
   title: string;
+  indication: string;
   species: Species;
   kind: FoodKind;
   lifeStages: LifeStage[];
@@ -52,13 +68,20 @@ export interface ComparatorItem {
   vetNote: string | null;
   gtin: string | null;
   description: string | null;
-  /** Foto oficial verificada da embalagem; null = mostrar o marcador ilustrativo. */
   photoUrl: string | null;
-  /** Ordenadas pelo menor preço; sem estoque no fim. */
+  /** Ordenadas pelo menor preço; sem preço e indisponíveis no fim. */
   offers: ComparatorOffer[];
-  /** Menor preço entre as lojas com estoque (null = sem oferta disponível). */
+  /** Menor preço público entre as lojas com estoque (null = nenhum). */
   bestPrice: number | null;
+  /** Lojas com preço público e estoque. */
   storeCount: number;
-  /** Média do menor preço nos últimos 30 dias (null = sem histórico suficiente). */
+  /** Horário do preço mais recente entre as ofertas com preço. */
+  updatedAt: string | null;
+  /** O menor preço está fora do prazo de atualização. */
+  bestPriceStale: boolean;
   avgPrice30d: number | null;
+  /** Tem preço ou produto de exemplo (mostra o selo). */
+  isDemo: boolean;
+  /** O próprio produto é de exemplo (fica fora do sitemap). */
+  demoProduct: boolean;
 }

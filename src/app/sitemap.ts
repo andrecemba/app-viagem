@@ -1,14 +1,15 @@
 import type { MetadataRoute } from "next";
 
 import { siteConfig } from "@/config/site";
-import { getBrands, getProductSlugs } from "@/lib/data";
+import { getCatalog } from "@/lib/catalog/public";
+
+export const dynamic = "force-dynamic";
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const [slugs, brands] = await Promise.all([getProductSlugs(), getBrands()]);
-  const staticPaths = ["", "/caes", "/gatos", "/marcas", "/calculadora", "/sobre", "/faq", "/divulgacao-de-afiliados", "/contato"];
+  const items = await getCatalog();
+  const staticPaths = ["", "/sobre", "/faq", "/divulgacao-de-afiliados", "/contato"];
   return [
     ...staticPaths.map((p) => ({ url: `${siteConfig.url}${p}` })),
-    ...brands.map((b) => ({ url: `${siteConfig.url}/marca/${b.slug}` })),
-    ...slugs.map((s) => ({ url: `${siteConfig.url}/produto/${s}`, changeFrequency: "daily" as const })),
+    ...items.filter((i) => !i.demoProduct).map((i) => ({ url: `${siteConfig.url}/produto/${i.slug}`, lastModified: i.updatedAt ?? undefined })),
   ];
 }

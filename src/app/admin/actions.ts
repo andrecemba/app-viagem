@@ -4,28 +4,24 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 
-import { ADMIN_STORES } from "@/config/stores";
+import { clearLoginFailures, endSession, loginBlocked, registerLoginFailure, requireAdmin, startSession } from "@/lib/admin/auth";
+import { checkCredentials, isAdminConfigured } from "@/lib/admin/session";
 import { generateDemoEvents } from "@/lib/analytics/demo";
 import { removeDemoEvents, writeDemoEvents } from "@/lib/analytics/store";
-import { clearLoginFailures, endSession, loginBlocked, registerLoginFailure, requireAdmin, startSession } from "@/lib/admin/auth";
-import { productLabel } from "@/lib/admin/labels";
-import {
-  AdminError,
-  deleteOffer,
-  deleteProduct,
-  saveOffer,
-  saveProduct,
-  saveSettings,
-  setProductsStatus,
-  type ProductInput,
-} from "@/lib/admin/mutations";
-import { adminRepo } from "@/lib/admin/repository";
-import { checkCredentials, isAdminConfigured } from "@/lib/admin/session";
-import type { AdminDb, DogSize, FoodType, LifeStage, Need, PublicationStatus, Species } from "@/lib/admin/types";
+import { getCatalog } from "@/lib/catalog/public";
 import { DOG_SIZE_VALUES, FOOD_TYPE_VALUES, LIFE_STAGE_VALUES, NEEDS } from "@/lib/catalog/vocab";
-import { mockSource } from "@/lib/data/mock-source";
+import { getDb } from "@/lib/db";
+import { removeDemo } from "@/lib/db/seed";
+import { createOffer, getOffer, revertOverride, setMatchStatus, setOfferActive, updateOffer } from "@/lib/domain/offers";
+import { getProduct, saveProduct, setProductActive, type ProductInput } from "@/lib/domain/products";
+import { saveSettings } from "@/lib/domain/settings";
+import { getStore, listStores, saveStore } from "@/lib/domain/stores";
+import { OVERRIDABLE_FIELDS, type Availability, type DataSource, type OfferValues, type OverridableField, type PriceDisplay, type StoreMode } from "@/lib/domain/types";
+import { ValidationError } from "@/lib/domain/validation";
+import { importOffersCsv } from "@/lib/integrations/csv";
+import { refreshOffer, syncStore } from "@/lib/integrations/sync";
 
-/* Toda ação: 1) confere a sessão, 2) valida a entrada, 3) grava, 4) volta com aviso. */
+/* Toda ação: 1) confere a sessão, 2) valida a entrada, 3) grava, 4) volta com aviso ou erro. */
 
 const text = (fd: FormData, k: string) => {
   const v = fd.get(k);
@@ -43,25 +39,43 @@ function safeReturn(value: string, fallback: string) {
   return value.startsWith("/admin") && !value.startsWith("//") ? value : fallback;
 }
 
-async function mutate(returnTo: string, fn: (db: AdminDb) => AdminDb | Promise<AdminDb>, ok: string) {
-  try {
-    await adminRepo.update(fn);
-  } catch (e) {
-    if (e instanceof AdminError) back(returnTo, { erro: e.message });
-    throw e;
-  }
+function refresh() {
   revalidatePath("/admin", "layout");
   revalidatePath("/", "layout");
-  back(returnTo, { aviso: ok });
+}
+
+/** Roda uma alteração; erro de validação volta para a tela com a mensagem. */
+async function attempt<T>(returnTo: string, fn: () => T | Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (e) {
+    if (e instanceof ValidationError) back(returnTo, { erro: e.message });
+    throw e;
+  }
 }
 
 /** "1.234,56", "189,9" ou "189.90" → número. */
-function parseDecimal(raw: string, what: string): number | null {
+function decimal(raw: string, what: string): number | null {
   if (!raw) return null;
-  const normalized = raw.includes(",") ? raw.replace(/\./g, "").replace(",", ".") : raw;
-  const n = Number(normalized);
-  if (!Number.isFinite(n) || n < 0) throw new AdminError(`${what} inválido: use um número, ex.: 189,90.`);
+  const n = Number(raw.includes(",") ? raw.replace(/\./g, "").replace(",", ".") : raw);
+  if (!Number.isFinite(n) || n < 0) throw new ValidationError(`${what} inválido: use um número, ex.: 189,90.`);
   return n;
+}
+
+function money(raw: string, what: string) {
+  const n = decimal(raw, what);
+  return n == null ? null : Math.round(n * 100) / 100;
+}
+
+/** Peso digitado em kg ("10,1") ou g ("85"), conforme a unidade escolhida. */
+function grams(fd: FormData, field: string, unitField: string, what: string) {
+  const n = decimal(text(fd, field), what);
+  if (n == null) return null;
+  return Math.round(n * (text(fd, unitField) === "g" ? 1 : 1000));
+}
+
+function oneOf<T extends string>(value: string, allowed: readonly T[]): T | null {
+  return (allowed as readonly string[]).includes(value) ? (value as T) : null;
 }
 
 // ── Sessão ─────────────────────────────────────────────────────────────
@@ -88,168 +102,296 @@ export async function logoutAction() {
 
 // ── Produtos ───────────────────────────────────────────────────────────
 
-function oneOf<T extends string>(value: string, allowed: readonly T[]): T | null {
-  return (allowed as readonly string[]).includes(value) ? (value as T) : null;
-}
-
 function productInput(fd: FormData): ProductInput {
-  const weight = parseDecimal(text(fd, "peso"), "Peso");
-  const unit = text(fd, "pesoUnidade") === "g" ? 1 : 1000;
-  const units = parseDecimal(text(fd, "unidades"), "Quantidade");
-  const sources = text(fd, "fontes")
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
-      const [url, ...rest] = line.split(/\s+/);
-      return { url, note: rest.join(" ").replace(/^[-–·]\s*/, "") };
-    });
+  const species = oneOf(text(fd, "especie"), ["caes", "gatos"] as const);
+  if (!species) throw new ValidationError("Escolha a espécie: cachorro ou gato.");
+  const weight = grams(fd, "peso", "pesoUnidade", "Peso");
+  if (weight == null) throw new ValidationError("Informe o peso da embalagem.");
+  const units = decimal(text(fd, "unidades"), "Quantidade");
   return {
-    brand: orNull(text(fd, "marca")),
+    species,
+    brand: text(fd, "marca"),
     line: orNull(text(fd, "linha")),
-    formula: orNull(text(fd, "formula")),
+    indication: text(fd, "indicacao"),
     flavor: orNull(text(fd, "sabor")),
-    species: oneOf<Species>(text(fd, "especie"), ["caes", "gatos"]),
-    lifeStage: oneOf<LifeStage>(text(fd, "idade"), LIFE_STAGE_VALUES),
-    size: oneOf<DogSize>(text(fd, "porte"), DOG_SIZE_VALUES),
-    foodType: oneOf<FoodType>(text(fd, "tipo"), FOOD_TYPE_VALUES),
-    vetNote: orNull(text(fd, "indicacaoVet")),
-    weightGrams: weight == null ? null : Math.round(weight * unit),
+    weightGrams: weight,
     unitCount: units == null ? null : Math.round(units),
-    needs: fd.getAll("necessidades").filter((v): v is Need => typeof v === "string" && (NEEDS as string[]).includes(v)),
-    kibbleSize: orNull(text(fd, "grao")),
+    neutered: fd.get("castrado") === "on",
+    lifeStage: oneOf(text(fd, "idade"), LIFE_STAGE_VALUES),
+    size: oneOf(text(fd, "porte"), DOG_SIZE_VALUES),
+    foodType: oneOf(text(fd, "tipo"), FOOD_TYPE_VALUES),
+    needs: fd.getAll("necessidades").filter((v): v is (typeof NEEDS)[number] => typeof v === "string" && (NEEDS as string[]).includes(v)),
+    gtin: orNull(text(fd, "gtin")),
+    imageUrl: orNull(text(fd, "imagem")),
     description: orNull(text(fd, "descricao")),
-    gtin: orNull(text(fd, "gtin").replace(/\s/g, "")),
-    sku: orNull(text(fd, "sku")),
-    imageUrl: orNull(text(fd, "foto")),
-    sources,
-    note: text(fd, "nota"),
-    verified: fd.get("conferido") === "on",
+    sources: text(fd, "fontes")
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .map((l) => {
+        const [url, ...rest] = l.split(/\s+/);
+        return { url, note: rest.join(" ") };
+      }),
+    notes: orNull(text(fd, "observacoes")),
+    active: fd.get("ativo") === "on",
   };
 }
 
 export async function saveProductAction(formData: FormData) {
-  const { actor } = await requireAdmin();
-  const id = text(formData, "id") || null;
+  await requireAdmin();
+  const idRaw = text(formData, "id");
+  const id = idRaw ? Number(idRaw) : null;
   const returnTo = id ? `/admin/produtos/${id}` : "/admin/produtos/novo";
-  let savedId = id;
-  try {
-    const input = productInput(formData);
-    if (!id && !input.brand && !input.formula) throw new AdminError("Informe pelo menos a marca e a fórmula.");
-    await adminRepo.update((db) => {
-      const r = saveProduct(db, id, input, actor, new Date().toISOString());
-      savedId = r.id;
-      return r.db;
-    });
-  } catch (e) {
-    if (e instanceof AdminError) back(returnTo, { erro: e.message });
-    throw e;
-  }
-  revalidatePath("/admin", "layout");
-  revalidatePath("/", "layout");
-  back(`/admin/produtos/${savedId}`, { aviso: id ? "Ficha salva." : "Ração cadastrada como rascunho. Complete os tópicos e publique." });
+  const product = await attempt(returnTo, () => saveProduct(getDb(), id, productInput(formData)));
+  refresh();
+  back(`/admin/produtos/${product.id}`, { aviso: id ? "Produto salvo." : "Produto cadastrado. Agora adicione as ofertas das lojas." });
 }
 
-export async function setStatusAction(formData: FormData) {
-  const { actor } = await requireAdmin();
-  const ids = formData.getAll("ids").filter((v): v is string => typeof v === "string");
-  const status = text(formData, "estado") as PublicationStatus;
+export async function setProductsActiveAction(formData: FormData) {
+  await requireAdmin();
+  const ids = formData.getAll("ids").map(Number).filter((n) => Number.isInteger(n) && n > 0);
+  const active = text(formData, "ativo") === "1";
   const returnTo = safeReturn(text(formData, "voltar"), "/admin/produtos");
-  if (!ids.length || !["rascunho", "publicado", "oculto"].includes(status)) back(returnTo, { erro: "Nenhum produto selecionado." });
-  let blocked: { id: string; missing: string[] }[] = [];
-  let names = new Map<string, string>();
-  await adminRepo.update((db) => {
-    const r = setProductsStatus(db, ids, status, actor, new Date().toISOString());
-    blocked = r.blocked;
-    names = new Map(db.products.map((p) => [p.id, productLabel(p)]));
-    return r.db;
-  });
-  revalidatePath("/admin", "layout");
-  revalidatePath("/", "layout");
-  const done = ids.length - blocked.length;
-  const verb = status === "publicado" ? "publicado(s)" : status === "oculto" ? "oculto(s)" : "de volta a rascunho";
-  if (blocked.length) {
-    back(returnTo, {
-      ...(done ? { aviso: `${done} produto(s) ${verb}.` } : {}),
-      erro: `Não publicado por falta de dados: ${blocked.map((b) => `${names.get(b.id)} (${b.missing.join(", ")})`).join("; ")}.`,
-    });
-  }
-  back(returnTo, { aviso: `${done} produto(s) ${verb}.` });
+  if (!ids.length) back(returnTo, { erro: "Nenhum produto selecionado." });
+  const db = getDb();
+  db.transaction(() => ids.forEach((id) => setProductActive(db, id, active)))();
+  refresh();
+  back(returnTo, { aviso: `${ids.length} produto(s) ${active ? "ativado(s)" : "desativado(s): saíram do site"}.` });
 }
 
-export async function deleteProductAction(formData: FormData) {
-  await requireAdmin();
-  const id = text(formData, "id");
-  if (formData.get("confirmo") !== "on") back(`/admin/produtos/${id}`, { erro: "Marque a confirmação para excluir." });
-  await mutate("/admin/produtos", (db) => deleteProduct(db, id), "Produto excluído.");
+// ── Ofertas ────────────────────────────────────────────────────────────
+
+function offerValues(fd: FormData): Partial<OfferValues> & { previousPriceAt?: string | null; externalId?: string | null } {
+  const fs = text(fd, "freteGratis");
+  const prevAt = text(fd, "precoAnteriorData");
+  return {
+    url: text(fd, "url"),
+    affiliateUrl: orNull(text(fd, "afiliado")),
+    price: money(text(fd, "preco"), "Preço"),
+    previousPrice: money(text(fd, "precoAnterior"), "Preço anterior"),
+    previousPriceAt: prevAt ? new Date(`${prevAt}T12:00:00-03:00`).toISOString() : null,
+    availability: (oneOf(text(fd, "disponibilidade"), ["disponivel", "indisponivel", "desconhecida"] as const) ?? "desconhecida") as Availability,
+    freeShipping: fs === "sim" ? true : fs === "nao" ? false : null,
+    listingWeightGrams: grams(fd, "pesoAnuncio", "pesoAnuncioUnidade", "Peso do anúncio"),
+    listingFlavor: orNull(text(fd, "saborAnuncio")),
+    imageUrl: orNull(text(fd, "imagem")),
+    notes: orNull(text(fd, "observacoes")),
+    externalId: orNull(text(fd, "idAnuncio")),
+  };
 }
 
-// ── Preços nas lojas ───────────────────────────────────────────────────
-
-export async function saveOfferAction(formData: FormData) {
-  await requireAdmin();
-  const productId = text(formData, "productId");
-  const offerId = text(formData, "offerId") || null;
-  const returnTo = `/admin/produtos/${productId}#precos`;
-  let price: number | null = null;
-  try {
-    price = parseDecimal(text(formData, "preco"), "Preço");
-  } catch (e) {
-    if (e instanceof AdminError) back(returnTo, { erro: e.message });
-    throw e;
-  }
-  await mutate(
-    returnTo,
-    (db) =>
-      saveOffer(
-        db,
+export async function createOfferAction(formData: FormData) {
+  const { actor } = await requireAdmin();
+  const productId = Number(text(formData, "productId"));
+  const storeId = text(formData, "loja");
+  const returnTo = `/admin/produtos/${productId}/nova-oferta?url=${encodeURIComponent(text(formData, "url"))}&loja=${storeId}`;
+  const offer = await attempt(returnTo, () => {
+    const db = getDb();
+    const product = getProduct(db, productId);
+    if (!product) throw new ValidationError("Produto não encontrado.");
+    const store = getStore(db, storeId);
+    if (!store) throw new ValidationError("Escolha a loja.");
+    const v = offerValues(formData);
+    const source = (oneOf(text(formData, "origem"), ["manual", "feed", "api"] as const) ?? "manual") as DataSource;
+    if (source !== "manual" && store.mode !== source) throw new ValidationError(`${store.name} não está configurada para ofertas por ${source === "api" ? "API" : "arquivo"}.`);
+    if (source !== "manual" && !v.externalId) throw new ValidationError("Ofertas importadas precisam do ID do anúncio.");
+    if (v.price == null && source === "manual") throw new ValidationError("Informe o preço (ou escolha uma origem automática).");
+    // Conferência explícita: o admin confirma que peso e sabor do anúncio são os do produto.
+    if (formData.get("confere") === "on") {
+      v.listingWeightGrams ??= product.weightGrams;
+      v.listingFlavor ??= product.flavor;
+    }
+    return createOffer(
+      db,
+      {
         productId,
-        offerId,
-        {
-          store: text(formData, "loja"),
-          price: price == null ? null : Math.round(price * 100) / 100,
-          url: orNull(text(formData, "link")),
-          sellerName: orNull(text(formData, "vendedor")),
-          available: formData.get("disponivel") === "on",
-        },
-        new Date().toISOString(),
-      ),
-    offerId ? "Preço atualizado." : "Loja adicionada.",
-  );
+        storeId,
+        dataSource: source,
+        externalId: v.externalId ?? null,
+        url: v.url!,
+        affiliateUrl: v.affiliateUrl ?? null,
+        price: v.price ?? null,
+        previousPrice: null,
+        previousPriceAt: null,
+        availability: v.availability ?? "desconhecida",
+        freeShipping: v.freeShipping ?? null,
+        listingTitle: orNull(text(formData, "tituloAnuncio")),
+        listingWeightGrams: v.listingWeightGrams ?? null,
+        listingFlavor: v.listingFlavor ?? null,
+        imageUrl: v.imageUrl ?? null,
+        notes: v.notes ?? null,
+        priceSource: source === "manual" ? "manual" : `${source}:${store.adapter}`,
+      },
+      actor,
+    );
+  });
+  refresh();
+  back(`/admin/ofertas/${offer.id}`, {
+    aviso: offer.matchStatus === "incerta" ? "Oferta cadastrada, mas marcada para revisão: o peso ou o sabor do anúncio não bate com o produto." : "Oferta cadastrada.",
+  });
 }
 
-export async function deleteOfferAction(formData: FormData) {
+export async function updateOfferAction(formData: FormData) {
+  const { actor } = await requireAdmin();
+  const id = Number(text(formData, "id"));
+  const returnTo = `/admin/ofertas/${id}`;
+  await attempt(returnTo, () => {
+    const v = offerValues(formData);
+    // Só os campos enviados pelo formulário entram na comparação.
+    const changes = Object.fromEntries(Object.entries(v).filter(([k]) => formData.has(FORM_FIELD[k] ?? k))) as typeof v;
+    return updateOffer(getDb(), id, changes, actor, orNull(text(formData, "nota")) ?? undefined);
+  });
+  refresh();
+  back(returnTo, { aviso: "Oferta salva. Correções em ofertas importadas ficam valendo até você voltar ao valor automático." });
+}
+
+const FORM_FIELD: Record<string, string> = {
+  url: "url",
+  affiliateUrl: "afiliado",
+  price: "preco",
+  previousPrice: "precoAnterior",
+  previousPriceAt: "precoAnteriorData",
+  availability: "disponibilidade",
+  freeShipping: "freteGratis",
+  listingWeightGrams: "pesoAnuncio",
+  listingFlavor: "saborAnuncio",
+  imageUrl: "imagem",
+  notes: "observacoes",
+  externalId: "idAnuncio",
+};
+
+/** Ligada ao campo no servidor: `revertOverrideAction.bind(null, "price")`. */
+export async function revertOverrideAction(field: OverridableField, formData: FormData) {
+  const { actor } = await requireAdmin();
+  const id = Number(text(formData, "id"));
+  if (!OVERRIDABLE_FIELDS.includes(field)) back(`/admin/ofertas/${id}`, { erro: "Campo inválido." });
+  await attempt(`/admin/ofertas/${id}`, () => revertOverride(getDb(), id, field, actor));
+  refresh();
+  back(`/admin/ofertas/${id}`, { aviso: "O campo voltou ao valor automático." });
+}
+
+export async function setMatchAction(formData: FormData) {
+  const { actor } = await requireAdmin();
+  const id = Number(text(formData, "id"));
+  const status = text(formData, "status") === "confirmada" ? "confirmada" : "incerta";
+  setMatchStatus(getDb(), id, status, actor, orNull(text(formData, "nota")) ?? undefined);
+  refresh();
+  back(`/admin/ofertas/${id}`, { aviso: status === "confirmada" ? "Correspondência confirmada." : "Oferta marcada para revisão." });
+}
+
+export async function setOfferActiveAction(formData: FormData) {
+  const { actor } = await requireAdmin();
+  const id = Number(text(formData, "id"));
+  const active = text(formData, "ativo") === "1";
+  setOfferActive(getDb(), id, active, actor);
+  refresh();
+  back(safeReturn(text(formData, "voltar"), `/admin/ofertas/${id}`), { aviso: active ? "Oferta reativada." : "Oferta desativada: saiu do site." });
+}
+
+export async function refreshOfferAction(formData: FormData) {
   await requireAdmin();
-  const productId = text(formData, "productId");
-  await mutate(`/admin/produtos/${productId}#precos`, (db) => deleteOffer(db, productId, text(formData, "offerId"), new Date().toISOString()), "Loja removida.");
+  const id = Number(text(formData, "id"));
+  const db = getDb();
+  if (!getOffer(db, id)) back("/admin/ofertas", { erro: "Oferta não encontrada." });
+  const r = await refreshOffer(db, id);
+  refresh();
+  if (r.skipped) back(`/admin/ofertas/${id}`, { erro: r.skipped });
+  back(`/admin/ofertas/${id}`, r.failed ? { erro: "A consulta falhou: veja o histórico. O último preço válido foi mantido." } : { aviso: "Oferta atualizada pela integração." });
 }
 
-// ── Dados ──────────────────────────────────────────────────────────────
+// ── Lojas ──────────────────────────────────────────────────────────────
+
+export async function saveStoreAction(formData: FormData) {
+  await requireAdmin();
+  const isNew = text(formData, "novo") === "1";
+  const returnTo = "/admin/lojas";
+  const list = (k: string) => text(formData, k).split(/[\s,]+/).filter(Boolean);
+  const store = await attempt(isNew ? `${returnTo}?nova=1` : `${returnTo}#loja-${text(formData, "id")}`, () =>
+    saveStore(
+      getDb(),
+      {
+        id: text(formData, "id") || undefined,
+        name: text(formData, "nome"),
+        domains: list("dominios"),
+        affiliateDomains: list("dominiosAfiliado"),
+        mode: (oneOf(text(formData, "modo"), ["manual", "feed", "api"] as const) ?? "manual") as StoreMode,
+        adapter: orNull(text(formData, "adaptador")),
+        priceDisplay: (text(formData, "exibicao") === "somente_api" ? "somente_api" : "sempre") as PriceDisplay,
+        color: text(formData, "cor") || "#6b7280",
+        logoUrl: orNull(text(formData, "logo")),
+        active: formData.get("ativa") === "on",
+      },
+      isNew,
+    ),
+  );
+  refresh();
+  back(`${returnTo}#loja-${store.id}`, { aviso: isNew ? `Loja ${store.name} cadastrada.` : `Loja ${store.name} salva.` });
+}
+
+export async function syncStoreAction(formData: FormData) {
+  await requireAdmin();
+  const storeId = text(formData, "id");
+  const r = await syncStore(getDb(), storeId, { trigger: "manual", force: formData.get("todas") === "on" });
+  refresh();
+  if (r.skipped) back("/admin/lojas", { erro: r.skipped });
+  back("/admin/lojas", { aviso: `${r.checked} consultada(s), ${r.updated} atualizada(s), ${r.failed} com erro.` });
+}
+
+export async function importCsvAction(formData: FormData) {
+  await requireAdmin();
+  const storeId = text(formData, "id");
+  const file = formData.get("arquivo");
+  if (!(file instanceof File) || file.size === 0) back("/admin/lojas", { erro: "Escolha um arquivo CSV." });
+  if (file.size > 2_000_000) back("/admin/lojas", { erro: "Arquivo grande demais (máximo 2 MB)." });
+  const db = getDb();
+  const store = getStore(db, storeId);
+  if (!store || store.mode !== "feed") back("/admin/lojas", { erro: "Esta loja não está configurada para importação por arquivo." });
+  const report = importOffersCsv(db, storeId, await file.text());
+  refresh();
+  const parts = [`${report.updated} oferta(s) atualizada(s) de ${report.rows} linha(s).`];
+  if (report.unknownIds.length) parts.push(`${report.unknownIds.length} ID(s) sem oferta cadastrada (cadastre a oferta no produto certo antes): ${report.unknownIds.slice(0, 5).join(", ")}.`);
+  if (report.errors.length) back("/admin/lojas", { aviso: parts.join(" "), erro: report.errors.slice(0, 3).map((e) => `Linha ${e.line}: ${e.message}`).join(" ") });
+  back("/admin/lojas", { aviso: parts.join(" ") });
+}
 
 export async function saveSettingsAction(formData: FormData) {
   await requireAdmin();
-  const returnTo = safeReturn(text(formData, "voltar"), "/admin/dados");
-  try {
-    const pct = (k: string, what: string) => {
-      const v = parseDecimal(text(formData, k), what);
-      return v == null ? null : v / 100;
-    };
-    const conversionRate = pct("conversao", "Conversão");
-    const commission: Record<string, number | null> = {};
-    for (const s of ADMIN_STORES) commission[s.slug] = pct(`comissao_${s.slug}`, `Comissão de ${s.name}`);
-    await mutate(returnTo, (db) => saveSettings(db, { conversionRate, commission }), "Taxas salvas.");
-  } catch (e) {
-    if (e instanceof AdminError) back(returnTo, { erro: e.message });
-    throw e;
-  }
+  const returnTo = safeReturn(text(formData, "voltar"), "/admin/lojas");
+  await attempt(returnTo, () => {
+    const patch: Parameters<typeof saveSettings>[1] = {};
+    if (formData.has("prazo")) patch.staleHours = Number(text(formData, "prazo"));
+    if (formData.has("validadeFrete")) patch.shippingQuoteHours = Number(text(formData, "validadeFrete"));
+    if (formData.has("conversao")) {
+      const pct = (k: string, what: string) => {
+        const v = decimal(text(formData, k), what);
+        return v == null ? null : v / 100;
+      };
+      patch.conversionRate = pct("conversao", "Conversão");
+      patch.commission = Object.fromEntries(listStores(getDb()).map((s) => [s.id, pct(`comissao_${s.id}`, `Comissão de ${s.name}`)]));
+    }
+    saveSettings(getDb(), patch);
+  });
+  refresh();
+  back(returnTo, { aviso: "Configuração salva." });
 }
+
+// ── Dados e demonstração ───────────────────────────────────────────────
 
 export async function demoEventsAction(formData: FormData) {
   await requireAdmin();
+  const db = getDb();
   if (text(formData, "acao") === "remover") {
-    await removeDemoEvents();
-    back("/admin/dados", { aviso: "Dados de demonstração removidos." });
+    removeDemoEvents(db);
+    back("/admin/dados", { aviso: "Acessos de demonstração removidos." });
   }
-  await writeDemoEvents(generateDemoEvents(await mockSource.getComparatorItems()));
-  back("/admin/dados?fonte=demo", { aviso: "Dados de demonstração carregados (fictícios)." });
+  writeDemoEvents(db, generateDemoEvents(await getCatalog()));
+  back("/admin/dados?fonte=demo", { aviso: "Acessos de demonstração carregados (fictícios)." });
+}
+
+export async function removeDemoAction(formData: FormData) {
+  await requireAdmin();
+  if (formData.get("confirmo") !== "on") back("/admin/produtos", { erro: "Marque a confirmação para remover os exemplos." });
+  removeDemo(getDb());
+  refresh();
+  back("/admin/produtos", { aviso: "Produtos e ofertas de exemplo removidos. O cadastro real continua." });
 }

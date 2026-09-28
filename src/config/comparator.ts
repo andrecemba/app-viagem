@@ -11,7 +11,5 @@ export const NATURAL_BRANDS = new Set(["guabi-natural", "formula-natural", "biof
 
 export const SEARCH_EXAMPLES = ["Golden frango 15 kg", "Royal Mini", "ração gato castrado"];
 
-export const REGION_LABEL = "Curitiba e região";
-
 /** Quantas marcas aparecem antes de "Ver todas". */
 export const BRANDS_VISIBLE = 12;

@@ -1,49 +1,46 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowUpRight, ChevronRight, HelpCircle, Stethoscope, Truck } from "lucide-react";
+import { AlertTriangle, ChevronRight, Info, Stethoscope } from "lucide-react";
 
 import { BrandSwatch } from "@/components/comparator/brand-swatch";
+import { DemoTag } from "@/components/comparator/family-card";
+import { OfferList } from "@/components/comparator/offer-list";
 import { PackagePhoto } from "@/components/comparator/package-photo";
 import { PriceAlertButton } from "@/components/comparator/price-alert";
 import { PriceSignalTag } from "@/components/comparator/price-signal";
 import { TopicGrid } from "@/components/comparator/topic-icons";
 import { TrackView } from "@/components/comparator/track-view";
-import { StoreLogo } from "@/components/icons/store-logo";
 import { siteConfig } from "@/config/site";
-import { MOCK_NOW } from "@/data/mock/random";
+import { getCatalogItem, staleHours } from "@/lib/catalog/public";
 import { defaultItem, groupByFamily, unitPriceOf } from "@/lib/comparator/filters";
 import { itemTopics, packageLabel, storeCountLabel } from "@/lib/comparator/labels";
 import type { ComparatorItem } from "@/lib/comparator/types";
-import { catalogSource, getCatalogItem } from "@/lib/data";
-import { alertSendingActive } from "@/lib/price-alerts/store";
 import { formatBRL, formatWeight } from "@/lib/format";
+import { alertSendingActive } from "@/lib/price-alerts/store";
+import { timeAgo } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
-export async function generateMetadata({ params }: PageProps<"/produto/[slug]">): Promise<Metadata> {
-  const { slug } = await params;
-  const found = await getCatalogItem(slug);
-  if (!found) return {};
-  const { item } = found;
-  const name = [item.brand.name, item.title, item.flavor, formatWeight(item.netWeightGrams)].filter(Boolean).join(" ");
-  return {
-    title: `${name}: preços nas lojas`,
-    description: item.bestPrice
-      ? `Compare ${name} em ${storeCountLabel(item.storeCount)}. Menor preço: ${formatBRL(item.bestPrice)}.`
-      : `Ficha e lojas de ${name}.`,
-    alternates: { canonical: `/produto/${slug}` },
-  };
-}
+export const dynamic = "force-dynamic";
 
 function fullName(i: ComparatorItem) {
   return [i.title, i.flavor].filter(Boolean).join(" · ");
 }
 
-function timeAgo(iso: string, now: Date) {
-  const h = Math.max(0, (now.getTime() - new Date(iso).getTime()) / 3600_000);
-  if (h < 1) return "há menos de 1 hora";
-  if (h < 48) return `há ${Math.round(h)} h`;
-  return `há ${Math.round(h / 24)} dias`;
+export async function generateMetadata({ params }: PageProps<"/produto/[slug]">): Promise<Metadata> {
+  const { slug } = await params;
+  const found = await getCatalogItem(slug);
+  if (!found) return { title: "Ração não encontrada" };
+  const { item } = found;
+  const name = `${fullName(item)} ${formatWeight(item.netWeightGrams)}`;
+  return {
+    title: `${name}: compare preços`,
+    description:
+      item.bestPrice != null && !item.isDemo
+        ? `Compare ${name} em ${storeCountLabel(item.storeCount)}: menor preço ${formatBRL(item.bestPrice)} (${timeAgo(item.updatedAt)}). Peso, sabor e frete conferidos por loja.`
+        : `Onde comprar ${name}: lojas, preço por kg, peso e sabor de cada anúncio para conferir antes de comprar.`,
+    alternates: { canonical: `/produto/${slug}` },
+  };
 }
 
 export default async function ProductPage({ params }: PageProps<"/produto/[slug]">) {
@@ -51,29 +48,39 @@ export default async function ProductPage({ params }: PageProps<"/produto/[slug]
   const found = await getCatalogItem(slug);
   if (!found) notFound();
   const { item, items } = found;
-  const demo = catalogSource() === "exemplo";
-  const now = demo ? MOCK_NOW : new Date();
+  const hours = staleHours();
 
   const unit = unitPriceOf(item);
-  const topics = itemTopics(item).filter((t) => t.key !== "veterinario");
+  const topics = itemTopics(item).filter((t) => t.key !== "veterinario" && t.key !== "grao");
   const sizes = items.filter((i) => i.family === item.family).sort((a, b) => a.netWeightGrams - b.netWeightGrams);
-  const available = item.offers.filter((o) => o.inStock);
-  const unavailable = item.offers.filter((o) => !o.inStock);
-  const worst = available.length > 1 ? available[available.length - 1].price : null;
+  const priced = item.offers.filter((o) => o.inStock && o.price != null);
+  const worst = priced.length > 1 ? Math.max(...priced.map((o) => o.price!)) : null;
 
-  // Outras opções: mesma fórmula com outro sabor; depois, outras fórmulas da marca para a mesma espécie.
   const others = groupByFamily(
     items.filter((i) => i.brand.slug === item.brand.slug && i.species === item.species && i.family !== item.family),
     items,
   ).map((g) => defaultItem(g));
-  const sameFormula = others.filter((i) => i.title === item.title);
-  const sameBrand = others.filter((i) => i.title !== item.title).slice(0, 6);
-
+  const sameLine = others.filter((i) => i.lineName === item.lineName).slice(0, 6);
+  const sameBrand = others.filter((i) => i.lineName !== item.lineName).slice(0, 6);
   const speciesLabel = item.species === "caes" ? "Cachorros" : "Gatos";
+
+  // Dados estruturados só com preços reais (nunca com preços de exemplo).
+  const realPrices = priced.filter((o) => !o.isDemo).map((o) => o.price!);
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@type": "Product",
+    name: `${item.brand.name} ${fullName(item)} ${formatWeight(item.netWeightGrams)}`,
+    brand: { "@type": "Brand", name: item.brand.name },
+    ...(item.gtin ? { gtin: item.gtin } : {}),
+    ...(realPrices.length
+      ? { offers: { "@type": "AggregateOffer", priceCurrency: "BRL", lowPrice: Math.min(...realPrices), highPrice: Math.max(...realPrices), offerCount: realPrices.length } }
+      : {}),
+  };
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6">
-      <TrackView id={item.id} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, "\\u003c") }} />
+      <TrackView id={item.id} slug={item.slug} />
       <nav aria-label="Trilha" className="mb-6 flex flex-wrap items-center gap-1 text-sm text-muted-foreground">
         <Link href="/" className="hover:text-foreground">
           Início
@@ -95,14 +102,14 @@ export default async function ProductPage({ params }: PageProps<"/produto/[slug]
         <div className="min-w-0">
           <p className="flex items-center gap-2 text-sm font-semibold text-muted-foreground">
             <BrandSwatch brand={item.brand} size={26} /> {item.brand.name}
-            {item.lineName && item.lineName !== item.brand.name && <span className="font-medium">· {item.lineName}</span>}
+            {item.isDemo && <DemoTag />}
           </p>
           <h1 className="mt-2 font-display text-2xl leading-tight font-bold text-balance sm:text-[1.75rem]">
             {fullName(item)} <span className="whitespace-nowrap text-muted-foreground">· {packageLabel(item)}</span>
           </h1>
           {item.kind === "medicamentosa" && (
             <p className="mt-3 flex items-start gap-2 rounded-md border px-3 py-2 text-sm">
-              <Stethoscope className="mt-0.5 size-4 shrink-0" aria-hidden /> Alimento de uso veterinário{item.vetNote ? ` (${item.vetNote})` : ""}: só troque ou compre com orientação do seu veterinário.
+              <Stethoscope className="mt-0.5 size-4 shrink-0" aria-hidden /> Alimento de uso veterinário: só troque ou compre com orientação do seu veterinário.
             </p>
           )}
           <h2 className="sr-only">Ficha da embalagem</h2>
@@ -113,7 +120,9 @@ export default async function ProductPage({ params }: PageProps<"/produto/[slug]
           <div className="rounded-lg border bg-card p-4 sm:p-5">
             {item.bestPrice != null ? (
               <>
-                <p className="text-sm text-muted-foreground">Menor preço em {storeCountLabel(item.storeCount)}</p>
+                <p className="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
+                  Menor preço em {storeCountLabel(item.storeCount)} {item.isDemo && <DemoTag />}
+                </p>
                 <p className="mt-1 flex flex-wrap items-baseline gap-x-3">
                   <span className="font-display text-3xl font-bold tabular-nums">{formatBRL(item.bestPrice)}</span>
                   {unit && (
@@ -123,10 +132,16 @@ export default async function ProductPage({ params }: PageProps<"/produto/[slug]
                     </span>
                   )}
                 </p>
+                <p className="text-xs text-muted-foreground">Só o produto, sem frete.</p>
                 <PriceSignalTag item={item} className="mt-2" />
+                <p className={cn("mt-2 flex items-center gap-1 text-xs", item.bestPriceStale ? "font-medium text-warning-foreground" : "text-muted-foreground")}>
+                  {item.bestPriceStale && <AlertTriangle className="size-3.5" aria-hidden />}
+                  {item.bestPriceStale ? `Desatualizado (mais de ${hours} h): ` : "Atualizado "}
+                  {timeAgo(item.updatedAt)}
+                </p>
                 {worst != null && (
                   <p className="mt-2 text-sm text-muted-foreground">
-                    A diferença entre a loja mais barata e a mais cara é de <strong className="text-foreground">{formatBRL(worst - item.bestPrice)}</strong>.
+                    Da loja mais barata para a mais cara: <strong className="text-foreground">{formatBRL(worst - item.bestPrice)}</strong> de diferença.
                   </p>
                 )}
                 <a href="#lojas" className="mt-4 inline-flex h-10 items-center rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground hover:bg-primary/90">
@@ -134,7 +149,7 @@ export default async function ProductPage({ params }: PageProps<"/produto/[slug]
                 </a>
               </>
             ) : (
-              <p className="text-sm">Nenhuma loja com esta embalagem disponível agora.</p>
+              <p className="text-sm">{item.offers.length ? "Nenhuma loja com preço disponível agora." : "Ainda não há ofertas cadastradas para esta ração."}</p>
             )}
           </div>
 
@@ -150,15 +165,10 @@ export default async function ProductPage({ params }: PageProps<"/produto/[slug]
                       <Link
                         href={`/produto/${s.slug}`}
                         aria-current={current ? "page" : undefined}
-                        className={cn(
-                          "flex flex-col rounded-md border px-3 py-2 text-sm transition-colors",
-                          current ? "border-foreground ring-1 ring-foreground" : "hover:border-foreground/40",
-                        )}
+                        className={cn("flex flex-col rounded-md border px-3 py-2 text-sm transition-colors", current ? "border-foreground ring-1 ring-foreground" : "hover:border-foreground/40")}
                       >
                         <span className="font-display font-semibold tabular-nums">{s.unitCount ? packageLabel(s) : formatWeight(s.netWeightGrams)}</span>
-                        <span className="text-xs text-muted-foreground tabular-nums">
-                          {u ? `${formatBRL(u.value)}${u.label}` : "sem oferta"}
-                        </span>
+                        <span className="text-xs text-muted-foreground tabular-nums">{u ? `${formatBRL(u.value)}${u.label}` : "sem preço"}</span>
                       </Link>
                     </li>
                   );
@@ -169,102 +179,55 @@ export default async function ProductPage({ params }: PageProps<"/produto/[slug]
         </div>
       </div>
 
-      <Section id="lojas" title={`Preços em ${storeCountLabel(item.offers.length)}`} subtitle="Do menor para o maior preço. Nenhuma loja paga para aparecer primeiro.">
-        <div className="mb-3 flex flex-col gap-3 rounded-lg border border-amber-300 bg-amber-50 p-3 sm:flex-row sm:items-center sm:justify-between dark:border-amber-800 dark:bg-amber-950/40">
+      <section id="lojas" aria-labelledby="lojas-titulo" className="mt-12 scroll-mt-24">
+        <h2 id="lojas-titulo" className="font-display text-xl font-semibold">
+          Ofertas em {storeCountLabel(item.offers.length)}
+        </h2>
+        <p className="mt-1 mb-4 text-sm text-muted-foreground">
+          Cada loja com o peso e o sabor do anúncio, para conferir se é a mesma embalagem. Nenhuma loja paga para aparecer primeiro.
+        </p>
+        <div className="mb-4 flex flex-col gap-3 rounded-lg border border-amber-300 bg-amber-50 p-3 sm:flex-row sm:items-center sm:justify-between dark:border-amber-800 dark:bg-amber-950/40">
           <p className="text-sm">
             <strong>Achou caro?</strong> Deixe seu e-mail e avisamos quando esta ração baixar de preço.
           </p>
           <PriceAlertButton
             sendingActive={alertSendingActive()}
             className="shrink-0"
-            product={{ id: item.id, name: [item.brand.name, fullName(item), packageLabel(item)].join(" · "), bestPrice: item.bestPrice }}
+            product={{ id: item.id, name: `${item.brand.name} · ${fullName(item)} · ${packageLabel(item)}`, bestPrice: item.bestPrice }}
           />
         </div>
-        {demo && (
-          <p className="mb-3 rounded-md bg-warning-soft px-3 py-2 text-sm text-warning-foreground">
-            Demonstração: preços ilustrativos. O botão registra o clique, mas ainda não leva a uma loja.
+        {item.offers.some((o) => o.isDemo) && (
+          <p className="mb-3 flex items-start gap-2 rounded-md bg-violet-50 px-3 py-2 text-sm text-violet-950 dark:bg-violet-950 dark:text-violet-100">
+            <Info className="mt-0.5 size-4 shrink-0" aria-hidden /> Ofertas marcadas como “Exemplo” têm preços fictícios de demonstração e não levam a uma loja.
           </p>
         )}
-        <ol className="divide-y rounded-lg border">
-          {[...available, ...unavailable].map((o, index) => {
-            const u = unitPriceOf(item, o.price);
-            return (
-              <li key={o.id} className={cn("grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-2 p-3 sm:grid-cols-[auto_1fr_auto_auto] sm:gap-x-5 sm:p-4", !o.inStock && "opacity-60")}>
-                <StoreLogo slug={o.storeSlug} size={40} />
-                <div className="min-w-0">
-                  <p className="flex flex-wrap items-center gap-x-2 font-semibold">
-                    {o.storeName}
-                    {index === 0 && o.inStock && <span className="rounded bg-success-soft px-1.5 py-0.5 text-[0.6875rem] font-semibold text-success">Menor preço</span>}
-                  </p>
-                  <p className="truncate text-xs text-muted-foreground">
-                    {o.sellerName !== o.storeName ? `Vendido por ${o.sellerName} · ` : ""}atualizado {timeAgo(o.lastCheckedAt, now)}
-                  </p>
-                  {o.freeShipping && (
-                    <p className="mt-0.5 inline-flex items-center gap-1 text-xs text-success">
-                      <Truck className="size-3.5" aria-hidden /> Frete grátis
-                    </p>
-                  )}
-                </div>
-                <div className="col-start-2 sm:col-start-auto sm:text-right">
-                  {o.inStock ? (
-                    <>
-                      <p className="font-display text-lg font-bold tabular-nums">{formatBRL(o.price)}</p>
-                      <p className="text-xs text-muted-foreground tabular-nums">
-                        {u && `${formatBRL(u.value)}${u.label}`}
-                        {o.pixPrice && ` · Pix ${formatBRL(o.pixPrice)}`}
-                      </p>
-                    </>
-                  ) : (
-                    <p className="text-sm font-medium">Indisponível</p>
-                  )}
-                </div>
-                <div className="col-start-2 sm:col-start-auto">
-                  {o.inStock && (
-                    <a
-                      href={`/ir/${encodeURIComponent(o.id)}`}
-                      rel="sponsored nofollow noopener"
-                      target="_blank"
-                      className={cn(
-                        "inline-flex h-10 w-full items-center justify-center gap-1.5 rounded-md px-4 text-sm font-semibold transition-colors sm:w-auto",
-                        index === 0 ? "bg-primary text-primary-foreground hover:bg-primary/90" : "border bg-card hover:border-foreground/40",
-                      )}
-                    >
-                      Ir à loja <ArrowUpRight className="size-4" aria-hidden />
-                      <span className="sr-only">{o.storeName} (abre em nova aba)</span>
-                    </a>
-                  )}
-                </div>
-              </li>
-            );
-          })}
-        </ol>
-        <p className="mt-3 flex items-start gap-1.5 text-xs text-muted-foreground">
-          <HelpCircle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-          <span>
-            O preço pode mudar entre a nossa atualização e a sua visita. {siteConfig.affiliateDisclaimer}
-          </span>
-        </p>
-      </Section>
+        {item.offers.length ? (
+          <OfferList item={item} staleHours={hours} />
+        ) : (
+          <p className="rounded-lg border px-4 py-8 text-center text-sm text-muted-foreground">Nenhuma oferta cadastrada ainda.</p>
+        )}
+        <p className="mt-3 text-xs text-muted-foreground">{siteConfig.affiliateDisclaimer}</p>
+      </section>
 
-      {sameFormula.length > 0 && (
-        <Section id="sabores" title="Mesma fórmula, outros sabores">
-          <OtherGrid items={sameFormula} items_all={items} />
+      {sameLine.length > 0 && (
+        <Section id="linha" title={`Mais opções da linha ${item.lineName}`}>
+          <OtherGrid items={sameLine} all={items} />
         </Section>
       )}
       {sameBrand.length > 0 && (
         <Section id="marca" title={`Outras opções ${item.brand.name} para ${speciesLabel.toLowerCase()}`}>
-          <OtherGrid items={sameBrand} items_all={items} />
+          <OtherGrid items={sameBrand} all={items} />
         </Section>
       )}
     </div>
   );
 }
 
-function OtherGrid({ items, items_all }: { items: ComparatorItem[]; items_all: ComparatorItem[] }) {
+function OtherGrid({ items, all }: { items: ComparatorItem[]; all: ComparatorItem[] }) {
   return (
     <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
       {items.map((i) => {
-        const weights = items_all.filter((x) => x.family === i.family).map((x) => formatWeight(x.netWeightGrams));
+        const weights = all.filter((x) => x.family === i.family).map((x) => formatWeight(x.netWeightGrams));
         const u = unitPriceOf(i);
         return (
           <li key={i.id}>
@@ -276,7 +239,12 @@ function OtherGrid({ items, items_all }: { items: ComparatorItem[]; items_all: C
                 {i.bestPrice != null && (
                   <span className="mt-1.5 block text-sm tabular-nums">
                     a partir de <strong>{formatBRL(i.bestPrice)}</strong>
-                    {u && <span className="text-muted-foreground"> · {formatBRL(u.value)}{u.label}</span>}
+                    {u && (
+                      <span className="text-muted-foreground">
+                        {" "}· {formatBRL(u.value)}
+                        {u.label}
+                      </span>
+                    )}
                   </span>
                 )}
               </span>
@@ -288,14 +256,12 @@ function OtherGrid({ items, items_all }: { items: ComparatorItem[]; items_all: C
   );
 }
 
-function Section({ id, title, subtitle, children }: { id: string; title: string; subtitle?: string; children: React.ReactNode }) {
+function Section({ id, title, children }: { id: string; title: string; children: React.ReactNode }) {
   return (
     <section id={id} aria-labelledby={`${id}-titulo`} className="mt-12 scroll-mt-24">
-      <h2 id={`${id}-titulo`} className="font-display text-xl font-semibold">
+      <h2 id={`${id}-titulo`} className="mb-4 font-display text-xl font-semibold">
         {title}
       </h2>
-      {subtitle && <p className="mt-1 mb-4 text-sm text-muted-foreground">{subtitle}</p>}
-      {!subtitle && <div className="mb-4" />}
       {children}
     </section>
   );

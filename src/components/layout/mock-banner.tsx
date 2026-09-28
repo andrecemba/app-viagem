@@ -1,14 +1,13 @@
-import { siteConfig } from "@/config/site";
-import { catalogSource } from "@/lib/data";
+import { getDb } from "@/lib/db";
 
-export function MockDataBanner() {
-  // Com o catálogo do admin (CATALOGO_PUBLICO=admin), preços e links são os cadastrados: sem aviso de exemplo.
-  if (!siteConfig.isMockData || catalogSource() === "admin") return null;
+/** Aviso enquanto houver ofertas de exemplo no banco (some quando os exemplos são removidos). */
+export function DemoDataBanner() {
+  const hasDemo = Boolean(getDb().prepare("SELECT 1 FROM offers WHERE is_demo = 1 AND active = 1 LIMIT 1").get());
+  if (!hasDemo) return null;
   return (
     <div className="border-b bg-muted">
       <p className="mx-auto max-w-6xl px-4 py-2 text-center text-xs text-muted-foreground">
-        <span className="font-semibold text-foreground">Versão de demonstração.</span> Produtos e lojas de exemplo, preços
-        ilustrativos e sem links de compra ativos.
+        <span className="font-semibold text-foreground">Versão de demonstração.</span> Preços marcados como “Exemplo” são fictícios e não levam a uma loja.
       </p>
     </div>
   );

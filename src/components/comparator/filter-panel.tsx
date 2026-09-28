@@ -31,11 +31,13 @@ export function FilterPanel({
   facets,
   brands,
   onToggle,
+  onPrice,
 }: {
   filters: FilterState;
   facets: Facets;
   brands: ComparatorBrand[];
   onToggle: (key: MultiKey, value: string) => void;
+  onPrice: (min: number | undefined, max: number | undefined) => void;
 }) {
   const option = (dim: MultiKey, value: string, label: string, hint?: string) => ({
     dim,
@@ -49,9 +51,15 @@ export function FilterPanel({
   const flavors = [...facets.flavor.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "pt-BR"));
   for (const f of filters.flavor) if (!facets.flavor.has(f)) flavors.push([f, 0]);
 
+  const lines = [...facets.line.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "pt-BR"));
+  for (const l of filters.line) if (!facets.line.has(l)) lines.push([l, 0]);
+
   return (
     <div className="divide-y">
       <BrandFilter brands={brands} filters={filters} counts={facets.brand} onToggle={(v) => onToggle("brand", v)} />
+      <Group title="Linha" count={filters.line.length} defaultOpen={filters.line.length > 0 || filters.brand.length > 0}>
+        <MoreList items={lines.map(([l]) => option("line", l, l))} onToggle={onToggle} visible={8} />
+      </Group>
       <Group title="Idade" count={filters.age.length}>
         {(["filhote", "adulto", "senior"] as const).map((s) => (
           <Check key={s} {...option("age", s, LIFE_STAGE_LABEL[s])} onToggle={onToggle} />
@@ -81,6 +89,9 @@ export function FilterPanel({
         {WEIGHT_RANGES.map((r) => (
           <Check key={r.slug} {...option("weight", r.slug, r.label, r.hint || undefined)} onToggle={onToggle} />
         ))}
+      </Group>
+      <Group title="Faixa de preço" count={filters.priceMin != null || filters.priceMax != null ? 1 : 0}>
+        <PriceRange min={filters.priceMin} max={filters.priceMax} onChange={onPrice} />
       </Group>
     </div>
   );
@@ -240,5 +251,47 @@ function BrandFilter({
         </button>
       )}
     </section>
+  );
+}
+
+/** Menor preço da embalagem entre dois valores (aplica ao sair do campo ou com Enter). */
+function PriceRange({ min, max, onChange }: { min?: number; max?: number; onChange: (min: number | undefined, max: number | undefined) => void }) {
+  const [lo, setLo] = useState(min != null ? String(min) : "");
+  const [hi, setHi] = useState(max != null ? String(max) : "");
+  const [prev, setPrev] = useState([min, max]);
+  if (prev[0] !== min || prev[1] !== max) {
+    setPrev([min, max]);
+    setLo(min != null ? String(min) : "");
+    setHi(max != null ? String(max) : "");
+  }
+  const parse = (v: string) => {
+    const n = Number(v.replace(/\./g, "").replace(",", "."));
+    return v.trim() && Number.isFinite(n) && n >= 0 ? n : undefined;
+  };
+  const apply = () => onChange(parse(lo), parse(hi));
+  const field = "h-9 w-full rounded-md border border-input bg-card pr-2 pl-8 text-sm outline-none focus:border-foreground";
+  return (
+    <form
+      className="grid grid-cols-2 gap-2"
+      onSubmit={(e) => {
+        e.preventDefault();
+        apply();
+      }}
+    >
+      {(
+        [
+          ["De", lo, setLo],
+          ["Até", hi, setHi],
+        ] as const
+      ).map(([label, value, set]) => (
+        <label key={label} className="space-y-1 text-xs text-muted-foreground">
+          <span>{label}</span>
+          <span className="relative block">
+            <span className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2">R$</span>
+            <input value={value} onChange={(e) => set(e.target.value)} onBlur={apply} inputMode="decimal" className={field} />
+          </span>
+        </label>
+      ))}
+    </form>
   );
 }

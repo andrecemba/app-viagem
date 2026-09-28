@@ -1,50 +1,31 @@
-import "server-only";
+import type { Db } from "@/lib/db/util";
 
-import { appendFile, mkdir, readFile } from "node:fs/promises";
-import path from "node:path";
-
-import { adminDataDir } from "@/lib/admin/repository";
-
-/**
- * Pedidos de "Avisar oferta". Contém e-mail (dado pessoal): fica só no servidor,
- * nunca aparece em tela pública, e o admin vê apenas contagens.
- * Envio dos e-mails: depende de um serviço de envio (ver docs/ADMIN.md).
- */
+/** Pedidos de "Avisar oferta". O e-mail fica só no servidor; o admin vê contagens. */
 export interface PriceAlertRequest {
   at: string;
   email: string;
-  /** null = qualquer ração em promoção (pedido feito no Top descontos). */
-  productId: string | null;
-  productName: string | null;
-  /** Preço no momento do pedido. */
+  productId: number | null;
   priceAtRequest: number | null;
-  /** null = avisar em qualquer queda. */
   targetPrice: number | null;
 }
 
-const file = () => path.join(adminDataDir(), "avisos.jsonl");
-
-export async function savePriceAlert(req: PriceAlertRequest) {
-  await mkdir(adminDataDir(), { recursive: true });
-  await appendFile(file(), `${JSON.stringify(req)}\n`, "utf8");
+export function savePriceAlert(db: Db, r: PriceAlertRequest) {
+  db.prepare("INSERT INTO price_alert_requests (at, email, product_id, price_at_request, target_price) VALUES (?, ?, ?, ?, ?)").run(
+    r.at,
+    r.email,
+    r.productId,
+    r.priceAtRequest,
+    r.targetPrice,
+  );
 }
 
-export async function readPriceAlerts(): Promise<PriceAlertRequest[]> {
-  try {
-    return (await readFile(file(), "utf8"))
-      .split("\n")
-      .filter(Boolean)
-      .flatMap((l) => {
-        try {
-          return [JSON.parse(l) as PriceAlertRequest];
-        } catch {
-          return [];
-        }
-      });
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === "ENOENT") return [];
-    throw e;
-  }
+export function alertCountsByProduct(db: Db, since: string) {
+  return db
+    .prepare(
+      `SELECT product_id AS productId, COUNT(*) AS count, SUM(target_price IS NOT NULL) AS targets FROM price_alert_requests
+       WHERE at >= ? GROUP BY product_id ORDER BY count DESC`,
+    )
+    .all(since) as { productId: number | null; count: number; targets: number }[];
 }
 
 /** O envio só é real quando um serviço de e-mail estiver configurado. */

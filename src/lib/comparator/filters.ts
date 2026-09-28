@@ -9,22 +9,26 @@ import type { ComparatorItem, FoodKind } from "./types";
 export interface FilterState {
   species?: Species;
   brand: string[];
+  line: string[];
   age: LifeStage[];
   size: FilterSize[];
   kind: FoodKind[];
   need: Need[];
   flavor: string[];
   weight: WeightRange[];
+  /** Faixa do menor preço da embalagem (R$). */
+  priceMin?: number;
+  priceMax?: number;
 }
 
-export type MultiKey = Exclude<keyof FilterState, "species">;
+export type MultiKey = Exclude<keyof FilterState, "species" | "priceMin" | "priceMax">;
 export type FilterKey = keyof FilterState;
 
-export const MULTI_KEYS: MultiKey[] = ["brand", "age", "size", "kind", "need", "flavor", "weight"];
+export const MULTI_KEYS: MultiKey[] = ["brand", "line", "age", "size", "kind", "need", "flavor", "weight"];
 
-export const EMPTY_FILTERS: FilterState = { brand: [], age: [], size: [], kind: [], need: [], flavor: [], weight: [] };
+export const EMPTY_FILTERS: FilterState = { brand: [], line: [], age: [], size: [], kind: [], need: [], flavor: [], weight: [] };
 
-export type SortKey = "relevancia" | "marca" | "menor-preco" | "preco-kg";
+export type SortKey = "relevancia" | "marca" | "menor-preco" | "preco-kg" | "recentes";
 
 /** Valores de um item numa dimensão. */
 export function valuesOf(item: ComparatorItem, key: FilterKey): string[] {
@@ -33,6 +37,8 @@ export function valuesOf(item: ComparatorItem, key: FilterKey): string[] {
       return [item.species];
     case "brand":
       return [item.brand.slug];
+    case "line":
+      return item.lineName ? [item.lineName] : [];
     case "age":
       return item.lifeStages.includes("todas") ? ["filhote", "adulto", "senior"] : item.lifeStages;
     case "size":
@@ -46,11 +52,15 @@ export function valuesOf(item: ComparatorItem, key: FilterKey): string[] {
       return item.flavor ? [item.flavor] : [];
     case "weight":
       return [weightRangeOf(item.netWeightGrams)];
+    default:
+      return [];
   }
 }
 
 export function matchesFilters(item: ComparatorItem, f: FilterState, ignore?: FilterKey): boolean {
   if (ignore !== "species" && f.species && item.species !== f.species) return false;
+  if (ignore !== "priceMin" && f.priceMin != null && (item.bestPrice == null || item.bestPrice < f.priceMin)) return false;
+  if (ignore !== "priceMax" && f.priceMax != null && (item.bestPrice == null || item.bestPrice > f.priceMax)) return false;
   for (const key of MULTI_KEYS) {
     if (key === ignore || !f[key].length) continue;
     const values = valuesOf(item, key);
@@ -70,7 +80,7 @@ export function facetCounts(items: ComparatorItem[], f: FilterState, key: Filter
 }
 
 export function activeFilterCount(f: FilterState) {
-  return MULTI_KEYS.reduce((n, k) => n + f[k].length, 0);
+  return MULTI_KEYS.reduce((n, k) => n + f[k].length, 0) + (f.priceMin != null || f.priceMax != null ? 1 : 0);
 }
 
 export function unitPriceOf(item: Pick<ComparatorItem, "bestPrice" | "netWeightGrams" | "kind">, price = item.bestPrice) {
@@ -139,6 +149,7 @@ export function sortGroups(groups: ItemGroup[], sort: SortKey, scores: Map<strin
   const score = (g: ItemGroup) => Math.max(...g.items.map((i) => scores.get(i.id) ?? 0));
   const price = (g: ItemGroup) => lead.get(g.family)!.bestPrice ?? 1e9;
   const perKg = (g: ItemGroup) => unitPriceOf(lead.get(g.family)!)?.value ?? 1e9;
+  const updated = (g: ItemGroup) => Math.max(...g.items.map((i) => (i.updatedAt ? new Date(i.updatedAt).getTime() : 0)));
   const list = [...groups];
   switch (sort) {
     case "relevancia":
@@ -147,6 +158,8 @@ export function sortGroups(groups: ItemGroup[], sort: SortKey, scores: Map<strin
       return list.sort((a, b) => price(a) - price(b) || byIdentity(a, b));
     case "preco-kg":
       return list.sort((a, b) => perKg(a) - perKg(b) || byIdentity(a, b));
+    case "recentes":
+      return list.sort((a, b) => updated(b) - updated(a) || byIdentity(a, b));
     default:
       return list.sort(byIdentity);
   }
@@ -167,6 +180,7 @@ export interface ComparatorUrlState {
 
 const URL_KEYS: Record<MultiKey, string> = {
   brand: "marca",
+  line: "linha",
   age: "idade",
   size: "porte",
   kind: "tipo",
@@ -192,10 +206,16 @@ export function readUrlState(params: Params): ComparatorUrlState {
     const values = [...new Set(list(params[URL_KEYS[key]]).map((v) => v.slice(0, 60)))].filter((v) => !allowed || allowed.includes(v));
     (filters[key] as string[]) = values;
   }
+  const money = (v: string | undefined) => {
+    const n = Number((v ?? "").replace(",", "."));
+    return v && Number.isFinite(n) && n >= 0 ? n : undefined;
+  };
+  filters.priceMin = money(first(params.precoMin));
+  filters.priceMax = money(first(params.precoMax));
   return {
     query: first(params.q) ?? "",
     filters,
-    sort: sort === "relevancia" || sort === "marca" || sort === "menor-preco" || sort === "preco-kg" ? sort : null,
+    sort: sort === "relevancia" || sort === "marca" || sort === "menor-preco" || sort === "preco-kg" || sort === "recentes" ? sort : null,
   };
 }
 
@@ -205,6 +225,8 @@ export function writeUrlState(state: ComparatorUrlState): string {
   if (state.query.trim()) p.set("q", state.query.trim());
   if (state.filters.species) p.set("especie", state.filters.species);
   for (const key of MULTI_KEYS) for (const v of state.filters[key]) p.append(URL_KEYS[key], v);
+  if (state.filters.priceMin != null) p.set("precoMin", String(state.filters.priceMin));
+  if (state.filters.priceMax != null) p.set("precoMax", String(state.filters.priceMax));
   if (state.sort) p.set("ordem", state.sort);
   const qs = p.toString();
   return qs ? `?${qs}` : "";

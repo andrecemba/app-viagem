@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 
 import { InstitutionalPage } from "@/components/layout/institutional-page";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { siteConfig } from "@/config/site";
 
 export const metadata: Metadata = { title: "Perguntas frequentes" };
 
@@ -10,7 +9,7 @@ const faqs = [
   {
     id: "preco-diferente",
     q: "Por que o preço pode ser diferente no site da loja?",
-    a: `Verificamos os preços ${siteConfig.checkIntervalLabel}. Entre uma verificação e outra a loja pode mudar o preço, acabar o estoque ou aplicar um frete diferente para o seu CEP. Promoções relâmpago e preços de vendedores parceiros também mudam rápido. O preço válido é sempre o da loja no momento da compra.`,
+    a: `Atualizamos os preços a cada 48 horas nas lojas com integração, e mostramos em cada oferta quando o preço foi obtido. Entre uma verificação e outra a loja pode mudar o preço, acabar o estoque ou aplicar um frete diferente para o seu CEP. Promoções relâmpago e preços de vendedores parceiros também mudam rápido. O preço válido é sempre o da loja no momento da compra.`,
   },
   {
     id: "comissao",

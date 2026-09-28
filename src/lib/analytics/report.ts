@@ -1,4 +1,3 @@
-import { storeInfo } from "@/config/stores";
 import { FOOD_TYPE_LABEL, formatGrams, SIZE_LABEL, SPECIES_LABEL, type DogSize, type FoodType, type Species } from "@/lib/catalog/vocab";
 
 import type { AnalyticsEvent } from "./types";
@@ -66,7 +65,7 @@ const WEIGHT_RANGE_LABEL: Record<string, string> = {
 
 export function buildReport(
   events: AnalyticsEvent[],
-  opts: { from: Date; to: Date; conversionRate: number | null; commission: Record<string, number | null> },
+  opts: { from: Date; to: Date; conversionRate: number | null; commission: Record<string, number | null>; storeNames?: Record<string, string> },
 ): Report {
   const from = opts.from.toISOString();
   const to = opts.to.toISOString();
@@ -147,7 +146,7 @@ export function buildReport(
       const commissionRate = opts.commission[store] ?? null;
       return {
         store,
-        name: storeInfo(store).name,
+        name: opts.storeNames?.[store] ?? store,
         clicks: s.clicks,
         share: totals.clicks ? s.clicks / totals.clicks : 0,
         value: Math.round(s.value * 100) / 100,

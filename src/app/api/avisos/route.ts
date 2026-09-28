@@ -1,7 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { rateLimited } from "@/lib/analytics/store";
-import { findCatalogProduct } from "@/lib/data";
+import { findCatalogProduct } from "@/lib/catalog/public";
+import { getDb } from "@/lib/db";
 import { savePriceAlert } from "@/lib/price-alerts/store";
 import { normalizeEmail, parseTargetPrice } from "@/lib/price-alerts/validate";
 
@@ -31,11 +32,10 @@ export async function POST(request: NextRequest) {
   const target = parseTargetPrice(body.precoAlvo, item?.bestPrice ?? null);
   if (target === "invalido") return NextResponse.json({ erro: "O preço desejado precisa ser menor que o preço atual." }, { status: 400 });
 
-  await savePriceAlert({
+  savePriceAlert(getDb(), {
     at: new Date().toISOString(),
     email,
-    productId: item?.id ?? null,
-    productName: item ? [item.brand.name, item.title, item.flavor].filter(Boolean).join(" · ") : null,
+    productId: item ? Number(item.id) : null,
     priceAtRequest: item?.bestPrice ?? null,
     targetPrice: target,
   });

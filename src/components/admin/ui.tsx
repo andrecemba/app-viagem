@@ -1,7 +1,5 @@
 import Link from "next/link";
 
-import { STATUS_LABEL } from "@/lib/admin/labels";
-import type { PublicationStatus } from "@/lib/admin/types";
 import { cn } from "@/lib/utils";
 
 /** Peças visuais compartilhadas pelas telas administrativas. */
@@ -29,16 +27,6 @@ export function Flash({ aviso, erro }: { aviso?: string; erro?: string }) {
 }
 
 const badgeBase = "inline-flex items-center gap-1 whitespace-nowrap rounded px-1.5 py-0.5 text-[0.6875rem] font-semibold leading-4";
-
-const STATUS_CLASS: Record<PublicationStatus, string> = {
-  publicado: "bg-emerald-50 text-emerald-900 ring-1 ring-emerald-300 dark:bg-emerald-950 dark:text-emerald-100 dark:ring-emerald-800",
-  rascunho: "bg-muted text-foreground/80 ring-1 ring-border",
-  oculto: "bg-background text-muted-foreground ring-1 ring-dashed ring-border line-through decoration-muted-foreground/50",
-};
-
-export function StatusBadge({ status }: { status: PublicationStatus }) {
-  return <span className={cn(badgeBase, STATUS_CLASS[status])}>{STATUS_LABEL[status]}</span>;
-}
 
 export function DemoBadge() {
   return (

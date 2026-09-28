@@ -43,7 +43,7 @@ export default async function LoginPage({ searchParams }: PageProps<"/admin/entr
               <p className="font-medium">Acesso administrativo não configurado.</p>
               <p className="text-muted-foreground">
                 Por segurança o painel fica fechado até o servidor ter <code>ADMIN_EMAIL</code>, <code>ADMIN_PASSWORD_HASH</code> e{" "}
-                <code>ADMIN_SESSION_SECRET</code>. Veja <code>docs/ADMIN.md</code>.
+                <code>ADMIN_SESSION_SECRET</code>. Veja o README.
               </p>
             </div>
           )}

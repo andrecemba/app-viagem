@@ -62,10 +62,12 @@ const SORT_LABEL: Record<SortKey, string> = {
   marca: "Marca (A–Z)",
   "menor-preco": "Menor preço",
   "preco-kg": "Menor preço por kg",
+  recentes: "Atualização mais recente",
 };
 
 const TRACK_DIM: Record<MultiKey, string> = {
   brand: "marca",
+  line: "linha",
   age: "idade",
   size: "porte",
   kind: "tipo",
@@ -84,6 +86,7 @@ export function Comparator({
   initial,
   intro,
   aside,
+  strip,
 }: {
   items: ComparatorItem[];
   brands: ComparatorBrand[];
@@ -91,6 +94,8 @@ export function Comparator({
   intro: React.ReactNode;
   /** Painel ao lado da busca (Top descontos). */
   aside?: React.ReactNode;
+  /** Faixa entre o topo e os resultados (marcas populares, vistos recentemente). */
+  strip?: React.ReactNode;
 }) {
   const [query, setQuery] = useState(initial.query);
   const [filters, setFilters] = useState<FilterState>(initial.filters);
@@ -191,14 +196,8 @@ export function Comparator({
   };
   const brandBySlug = new Map(brands.map((b) => [b.slug, b]));
 
-  const panel = (
-    <FilterPanel
-      filters={filters}
-      facets={facets}
-      brands={brands}
-      onToggle={toggle}
-    />
-  );
+  const setPrice = (priceMin: number | undefined, priceMax: number | undefined) => setFilters((prev) => ({ ...prev, priceMin, priceMax }));
+  const panel = <FilterPanel filters={filters} facets={facets} brands={brands} onToggle={toggle} onPrice={setPrice} />;
   const packages = matching.length;
 
   return (
@@ -297,6 +296,8 @@ export function Comparator({
         </div>
       </section>
 
+      {strip && <div className="mx-auto max-w-6xl space-y-5 border-b px-4 py-5">{strip}</div>}
+
       <div className="mx-auto grid max-w-6xl gap-8 px-4 lg:grid-cols-[17rem_1fr]">
         <aside aria-label="Filtros" className="hidden lg:block">
           <div className="sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto pt-6 pr-2 pb-10">
@@ -369,6 +370,7 @@ export function Comparator({
             onToggle={toggle}
             onSpecies={() => setSpecies(undefined)}
             onClear={clearAll}
+            onClearPrice={() => setPrice(undefined, undefined)}
           />
 
           {groups.length > 0 ? (
@@ -464,17 +466,19 @@ function AppliedFilters({
   onToggle,
   onSpecies,
   onClear,
+  onClearPrice,
 }: {
   filters: FilterState;
   brandBySlug: Map<string, ComparatorBrand>;
   onToggle: (key: MultiKey, value: string) => void;
   onSpecies: () => void;
   onClear: () => void;
+  onClearPrice: () => void;
 }) {
   const chips = MULTI_KEYS.flatMap((key) =>
     (filters[key] as string[]).map((value) => ({ key, value })),
   );
-  if (!chips.length && !filters.species) return null;
+  if (!chips.length && !filters.species && filters.priceMin == null && filters.priceMax == null) return null;
   const chip =
     "inline-flex items-center gap-1 rounded-md border bg-muted px-2 py-1 text-xs font-medium hover:border-foreground/40";
   return (
@@ -487,6 +491,16 @@ function AppliedFilters({
           aria-label={`Remover filtro ${filters.species === "caes" ? "Cachorro" : "Gato"}`}
         >
           {filters.species === "caes" ? "Cachorro" : "Gato"}{" "}
+          <X className="size-3" aria-hidden />
+        </button>
+      )}
+      {(filters.priceMin != null || filters.priceMax != null) && (
+        <button type="button" onClick={onClearPrice} className={chip} aria-label="Remover filtro de preço">
+          {filters.priceMin != null && filters.priceMax != null
+            ? `R$ ${filters.priceMin} a R$ ${filters.priceMax}`
+            : filters.priceMin != null
+              ? `A partir de R$ ${filters.priceMin}`
+              : `Até R$ ${filters.priceMax}`}{" "}
           <X className="size-3" aria-hidden />
         </button>
       )}

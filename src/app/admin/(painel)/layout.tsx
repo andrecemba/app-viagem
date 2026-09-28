@@ -2,16 +2,23 @@ import Link from "next/link";
 
 import { AdminMobileNav, AdminSidebarNav, type NavItem } from "@/components/admin/admin-nav";
 import { requireAdmin } from "@/lib/admin/auth";
-import { adminRepo } from "@/lib/admin/repository";
+import { offerRows } from "@/lib/admin/data";
+import { getDb } from "@/lib/db";
 
 import { logoutAction } from "../actions";
 
 export default async function PainelLayout({ children }: LayoutProps<"/admin">) {
   const { email } = await requireAdmin();
-  const db = await adminRepo.read();
+  const db = getDb();
+  const products = (db.prepare("SELECT COUNT(*) AS n FROM products").get() as { n: number }).n;
+  const serious = offerRows(db).filter(
+    (r) => r.offer.active && !r.offer.isDemo && r.alerts.some((a) => ["produto_incerto", "divergencia_peso", "divergencia_sabor", "erro_importacao", "afiliado_invalido"].includes(a.kind)),
+  ).length;
 
   const items: NavItem[] = [
-    { href: "/admin/produtos", label: "Produtos", count: db.products.length, countTone: "neutral" },
+    { href: "/admin/produtos", label: "Produtos", count: products, countTone: "neutral" },
+    { href: "/admin/ofertas", label: "Ofertas e alertas", count: serious, countTone: "alert" },
+    { href: "/admin/lojas", label: "Lojas" },
     { href: "/admin/dados", label: "Dados" },
   ];
 

@@ -7,7 +7,6 @@ import { ProductsTable } from "@/components/admin/products-table";
 import { btn, EmptyState, Flash, input, PageHeader } from "@/components/admin/ui";
 import { requireAdmin } from "@/lib/admin/auth";
 import {
-  buildRows,
   computeFacets,
   FILTER_DIMENSIONS,
   matchesFilters,
@@ -16,17 +15,19 @@ import {
   sortRows,
   type ProductSort,
 } from "@/lib/admin/product-list";
-import { adminRepo } from "@/lib/admin/repository";
+import { removeDemoAction } from "@/app/admin/actions";
+import { productRows } from "@/lib/admin/data";
+import { getDb } from "@/lib/db";
 
 export const metadata: Metadata = { title: "Produtos" };
 
 export default async function ProductsPage({ searchParams }: PageProps<"/admin/produtos">) {
   await requireAdmin();
-  const [db, sp] = await Promise.all([adminRepo.read(), searchParams]);
+  const sp = await searchParams;
   const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
   const { filters, sort, dir } = readProductFilters(sp);
 
-  const all = buildRows(db.products);
+  const all = productRows(getDb());
   const facets = computeFacets(all, filters);
   const rows = sortRows(all.filter((r) => matchesFilters(r, filters)), sort, dir);
   const appliedCount = FILTER_DIMENSIONS.reduce((n, d) => n + (filters[d]?.length ?? 0), 0) + (filters.q ? 1 : 0);
@@ -50,10 +51,10 @@ export default async function ProductsPage({ searchParams }: PageProps<"/admin/p
     <div className="space-y-4">
       <PageHeader
         title="Produtos"
-        description="Cada ficha é uma embalagem exata (outro sabor ou peso = outra ficha). Os tópicos da ficha são os mesmos que o cliente vê no site."
+        description="Cada produto é uma ração exata: espécie, marca, linha, indicação, sabor e peso. Outro peso, sabor ou versão para castrados = outro produto."
         actions={
           <Link href="/admin/produtos/novo" className={btn.primary}>
-            Cadastrar ração
+            Novo produto
           </Link>
         }
       />
@@ -86,7 +87,7 @@ export default async function ProductsPage({ searchParams }: PageProps<"/admin/p
               <label htmlFor="busca-produtos" className="sr-only">
                 Buscar produtos
               </label>
-              <input id="busca-produtos" name="q" defaultValue={filters.q ?? ""} placeholder="Buscar por marca, fórmula ou sabor" className={input + " max-w-md"} />
+              <input id="busca-produtos" name="q" defaultValue={filters.q ?? ""} placeholder="Buscar por nome, marca, sabor ou EAN" className={input + " max-w-md"} />
               <button className={btn.secondary} type="submit">
                 Buscar
               </button>
@@ -115,13 +116,26 @@ export default async function ProductsPage({ searchParams }: PageProps<"/admin/p
                 </>
               ) : (
                 <Link href="/admin/produtos/novo" className="underline underline-offset-4">
-                  Cadastrar a primeira ração
+                  Cadastrar o primeiro produto
                 </Link>
               )}
             </EmptyState>
           )}
         </div>
       </div>
+      {all.some((r) => r.isDemo) && (
+        <details className="rounded-lg border p-3 text-sm [&_summary::-webkit-details-marker]:hidden">
+          <summary className="cursor-pointer list-none text-xs font-medium text-muted-foreground underline underline-offset-4">Remover dados de exemplo</summary>
+          <form action={removeDemoAction} className="mt-2 flex flex-wrap items-center gap-3">
+            <label className="flex items-center gap-2 text-xs">
+              <input type="checkbox" name="confirmo" className="accent-foreground" /> Apagar produtos e ofertas marcados como exemplo (o cadastro real fica)
+            </label>
+            <button type="submit" className={btn.danger}>
+              Remover exemplos
+            </button>
+          </form>
+        </details>
+      )}
     </div>
   );
 }

@@ -12,15 +12,13 @@ export function SiteFooter() {
       <div className="mx-auto max-w-6xl px-4 py-12">
         <p className="mb-10 flex gap-2.5 border-b pb-8 text-sm text-muted-foreground">
           <Info className="mt-0.5 size-4 shrink-0" aria-hidden />
-          {siteConfig.outboundLinksEnabled
-            ? siteConfig.affiliateDisclaimer
-            : "Versão de demonstração: produtos e lojas de exemplo, preços ilustrativos e nenhum link de compra ativo. Quando houver links de afiliado, isso será informado aqui e em cada oferta."}
+          {siteConfig.affiliateDisclaimer}
         </p>
         <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-4">
           <div className="space-y-3">
             <SiteLogo />
             <p className="text-sm text-muted-foreground">
-              Compare o preço da mesma embalagem de ração em lojas que atendem Curitiba e região.
+              Compare o preço da mesma embalagem de ração entre lojas, com o horário de cada atualização.
             </p>
           </div>
           <FooterColumn title="Navegue" links={mainNav} />

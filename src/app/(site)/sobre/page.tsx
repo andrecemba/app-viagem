@@ -17,16 +17,17 @@ export default function AboutPage() {
         Um pacote de 15 kg e outro de 3 kg não podem ser comparados pelo preço total. Por isso dividimos o preço pelo peso: ração
         seca em <strong>R$/kg</strong>; sachês, latas e petiscos em <strong>R$/100 g</strong> (e por unidade).
       </p>
-      <h2>Como escolher o produto</h2>
+      <h2>A mesma ração, sempre</h2>
       <p>
-        No funil você escolhe espécie, tipo de alimento, fase de vida, porte, faixa e marca. Pode pular qualquer etapa
-        (&quot;Todas&quot;) e voltar quando quiser. O endereço da página guarda a sua escolha, então dá para salvar ou compartilhar.
+        Cada ração é identificada por espécie, marca, linha, indicação, sabor e peso. Outro peso, outro sabor ou a versão para
+        castrados são produtos diferentes e nunca entram na mesma comparação. Cada oferta mostra o peso e o sabor do anúncio para você
+        conferir; anúncios com dúvida passam por revisão antes de aparecer.
       </p>
       <h2>De onde vêm os preços</h2>
       <p>
-        Abrimos automaticamente a página de cada oferta {siteConfig.checkIntervalLabel}, com uma verificação extra às quintas-feiras.
-        Usamos APIs oficiais e dados estruturados das próprias lojas, respeitando os termos de uso de cada site. Ofertas suspeitas
-        (preço fora do normal, avaria, validade próxima) passam por revisão humana antes de aparecer.
+        Usamos só fontes permitidas: APIs oficiais das lojas (quando a nossa conta tem acesso), arquivos autorizados e cadastro
+        manual pela nossa equipe. Não copiamos páginas das lojas. Cada preço mostra quando foi obtido; depois de 48 horas sem
+        atualização, ele aparece como desatualizado. O frete só é mostrado para o seu CEP quando a loja cota o valor.
       </p>
       <h2>Como o site se sustenta</h2>
       <p>

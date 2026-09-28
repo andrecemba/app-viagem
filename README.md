@@ -1,105 +1,128 @@
-# Comparador de preços de ração (cães e gatos) — Fase 0
+# Ração Certa — comparador de preços de ração para cães e gatos
 
-Front-end navegável com **dados de exemplo** para avaliar visual e experiência.
-Ainda sem Supabase, robôs de coleta, APIs de afiliados ou autenticação.
+Site brasileiro para encontrar o menor preço da ração que a pessoa já compra, com painel administrativo em `/admin`.
 
-Stack: Next.js 16 (App Router) · TypeScript · Tailwind CSS v4 · componentes no padrão shadcn/ui (Radix) · lucide-react · Recharts · Vitest.
+**Stack:** Next.js 16 (App Router, páginas no servidor) · TypeScript · Tailwind CSS v4 · SQLite (better-sqlite3) com migrações em SQL · Vitest.
+Escolhi manter o Next.js que já estava no projeto (páginas públicas rápidas e boas para busca, painel e rotas de API no mesmo app)
+e usar SQLite: persistência real num arquivo, sem serviço extra para subir. Para hospedar sem disco persistente (serverless),
+troque o banco por Postgres mantendo as mesmas tabelas (`db/migrations`).
 
-## Como rodar
+## Regra central
+
+- **Produto** = a ração exata: espécie + marca + linha + indicação + sabor + peso (+ versão para castrados). GTIN/EAN opcional.
+  A combinação é única no banco (`identity_key`); outro peso, sabor ou versão castrado é outro produto.
+- **Oferta** = o anúncio desse produto numa loja: preço, moeda, horário e origem do preço, preço anterior (só quando registrado),
+  disponibilidade, URL original, link de afiliado (separado, nunca derivado da URL), selo de frete grátis do anúncio,
+  peso e sabor do anúncio, origem dos dados (manual, arquivo ou API) e última verificação.
+- Peso ou sabor do anúncio diferente do produto marca a oferta como **correspondência incerta** e gera alerta.
+
+## Instalação
 
 ```bash
 npm install
-npm run dev          # http://localhost:3000
-npm test             # testes das funções puras (Vitest)
-npm run lint && npm run typecheck && npm run build
+cp .env.example .env.local
+npm run admin:hash-senha -- "uma senha longa"   # cole em ADMIN_PASSWORD_HASH
+openssl rand -base64 48                            # ADMIN_SESSION_SECRET
+openssl rand -hex 24                               # CRON_SECRET
+npm run dev                                        # http://localhost:3000  ·  painel: /admin
 ```
 
-Para ver no celular da mesma rede: `npm run dev -- -H 0.0.0.0` e acesse `http://IP-DO-COMPUTADOR:3000`.
+Na primeira abertura o banco (`.data/racao.db`) é criado com as migrações, as 6 lojas, as rações reais do cadastro inicial
+e os **dados de exemplo** (produtos e ofertas marcados `is_demo`, com selo “Exemplo” no site). `SEED_DEMO=0` cria sem exemplos.
 
-## Telas para revisar
-
-| Tela | Endereço de exemplo |
+| Comando | O que faz |
 |---|---|
-| Home (funil de espécie + ofertas do dia) | `/` |
-| Funil + resultados (etapas com ícones, contadores, “Todas”, chips, lojas, ordenação) | `/caes`, `/caes/racao-seca/adulto/medio`, `/gatos/racao-seca/castrado` |
-| Dietas veterinárias (aviso) | `/caes/dietas-veterinarias` |
-| Lista vazia | `/gatos/racao-seca/castrado/economica` |
-| Página do produto (comparação, histórico, embalagens, Compre junto, Kit do mês) | `/produto/royal-canin-mini-adult-7-5-kg`, `/produto/golden-gatos-castrados-10-1-kg` |
-| Painel pós-clique “Aproveite e leve também” | clique em **Ver oferta** em qualquer produto |
-| Redirecionamento simulado (mostra a URL de afiliado em `npm run dev`) | `/ir/of-002-amazon`, `/ir/of-001-mercado-livre` |
-| Marca / lista de marcas | `/marca/golden`, `/marcas` |
-| Calculadora de gasto mensal | `/calculadora`, `/calculadora?produto=three-dogs-original-adultos-15-kg` (sem tabela → pede g/dia) |
-| Institucionais | `/sobre`, `/faq`, `/divulgacao-de-afiliados`, `/contato`, `/termos`, `/privacidade`, `/cookies` |
-| 404 | `/qualquer-coisa` |
+| `npm run db:migrate` | aplica migrações pendentes |
+| `npm run db:reset` | recria o banco local do zero |
+| `npm run db:sem-exemplos` | remove produtos e ofertas de exemplo (também há botão em Produtos) |
+| `npm run precos:atualizar` | roda a atualização de preços uma vez |
+| `npm test` · `npm run lint` · `npm run typecheck` · `npm run build` | verificações |
 
-Tema claro/escuro no ícone de sol/lua. Estados de carregamento aparecem ao navegar no funil e nos produtos.
+### Variáveis de ambiente
 
-## Área administrativa
+Veja `.env.example`. Todas ficam no servidor: nenhuma chave vai para o navegador.
+Obrigatórias para o painel: `ADMIN_EMAIL`, `ADMIN_PASSWORD_HASH`, `ADMIN_SESSION_SECRET`. Para a atualização programada: `CRON_SECRET`.
 
-Painel privado em `/admin` (login obrigatório), separado do site público, com dois itens: **Produtos** (cadastro por
-tópicos, preços e links por loja) e **Dados** (buscas, rações e marcas mais procuradas, cliques por loja e comissão
-estimada). Configuração e o que falta conectar estão em [`docs/ADMIN.md`](docs/ADMIN.md).
+## Painel (`/admin`)
 
-O site lê os dados de exemplo por padrão; com `CATALOGO_PUBLICO=admin`, passa a mostrar só as rações publicadas no painel.
+Login por e-mail e senha definidos no servidor (senha só em hash scrypt, sessão em cookie assinado de 8 h, limite de tentativas).
+`src/proxy.ts` bloqueia `/admin` e cada página e ação confere a sessão de novo.
+
+- **Produtos**: pesquisar, filtrar, criar, editar, ativar/desativar em lote, remover exemplos.
+- **Nova oferta** (no produto): colar a URL do anúncio → loja detectada pelo domínio e ID extraído quando o formato permite
+  → revisar preço, disponibilidade, selo de frete, link de afiliado, peso e sabor do anúncio → salvar.
+- **Oferta**: editar tudo; em ofertas importadas cada alteração vira **correção manual** (quem, quando, motivo), que a próxima
+  sincronização não apaga; botão **Voltar ao valor automático** por campo; histórico; **Atualizar agora** quando a integração está ativa.
+- **Ofertas e alertas**: preço antigo, anúncio indisponível, erro de importação, sem link de afiliado ou link inválido,
+  possível produto errado, peso ou sabor diferente, sem preço.
+- **Lojas**: status de cada integração e o que ela consegue fazer, variáveis que faltam, prazo de atualização (48 h),
+  validade da cotação de frete, nova loja (domínios, modo manual/arquivo/API), importação de CSV, últimas execuções.
+- **Dados**: buscas, rações e marcas mais procuradas, cliques por loja e comissão estimada (sem dados pessoais).
+
+## Atualização de preços
+
+Chame de hora em hora (cron do servidor, Vercel Cron, GitHub Actions):
+
+```bash
+curl -X POST -H "Authorization: Bearer $CRON_SECRET" https://SEU-SITE/api/cron/precos
+```
+
+Só as ofertas vencidas (prazo configurável, padrão 48 h) das lojas com API ativa são consultadas. As lojas rodam em paralelo
+e uma falha não bloqueia as outras; cada consulta tem tempo limite, limite de chamadas, cache curto e novas tentativas só
+para erros temporários. Falha (403, mudança de API, rede) **mantém o último preço válido**, conta falhas e gera alerta.
+Depois do prazo o site mostra o preço como desatualizado.
+
+## Integrações
+
+Interface única em `src/lib/integrations/types.ts` (`OfferSource`), com um adaptador por loja em `src/lib/integrations/adapters/`.
+Cada adaptador informa se consegue buscar anúncios, atualizar preço, consultar disponibilidade, cotar frete por CEP e gerar link
+de afiliado. Nova loja com API: novo arquivo em `adapters/` + uma linha em `src/lib/integrations/index.ts`.
+
+| Loja | Caminho que funciona hoje | Para ativar |
+|---|---|---|
+| Mercado Livre | Manual | Criar aplicativo em developers.mercadolivre.com.br, autorizar a conta e preencher `MERCADOLIVRE_CLIENT_ID`, `MERCADOLIVRE_CLIENT_SECRET`, `MERCADOLIVRE_REFRESH_TOKEN`. O adaptador usa `GET /items/{id}` (preço, status, estoque, frete grátis, atributos) e `GET /items/{id}/shipping_options?zip_code=` (frete por CEP). O link de afiliado vem do painel de afiliados e é colado na oferta. |
+| Shopee | Manual | Com acesso à Affiliate Open API: `SHOPEE_AFFILIATE_APP_ID`, `SHOPEE_AFFILIATE_SECRET` e `SHOPEE_AFFILIATE_ENABLED=1`; em Lojas, mude a Shopee para “API” com o adaptador Shopee. Traz preço e link de afiliado; não traz estoque nem frete por CEP. Preço em faixa (variações) não é importado. Confirme os campos na documentação da sua conta antes. |
+| Amazon | Manual, **sem preço público** | O site só mostra preço da Amazon obtido pela API oficial e recente (regra `somente_api`). Exige conta aprovada no Associados e a implementação da Creators API conferida com a documentação da conta; até lá a integração fica “pendente”. |
+| Petz, Cobasi, Petlove | Manual | Arquivo CSV ou feed autorizado: em Lojas, mude para “Arquivo / feed” com o adaptador CSV e importe (colunas `id_anuncio, preco, disponivel, titulo, frete_gratis`). Só atualiza ofertas já cadastradas. |
+
+Nenhuma loja depende de raspagem de páginas.
+
+## O que é real, o que é exemplo e o que depende das plataformas
+
+**Funcional com dados reais**
+- Cadastro de produtos, ofertas, lojas, correções e histórico, gravados no banco (persistem ao recarregar e reiniciar).
+- 19 rações reais no cadastro inicial (nome, linha, indicação, sabor e peso tirados de páginas de lojas e fabricantes; URLs de fonte em cada produto; conferir na embalagem antes de publicar preço). O Hill's Science Diet ficou de fora: as fontes divergem no peso (2,4 × 2,04 kg).
+- Ofertas cadastradas manualmente ou por CSV aparecem no site e o “Ver oferta” leva ao link salvo (afiliado, senão a URL original).
+- Busca tolerante, filtros, ordenações, preço por kg, prazo de atualização, alertas, métricas de uso e pedidos de “Avisar oferta”.
+
+**Dados de exemplo (claramente marcados)**
+- Todas as ofertas com preço do cadastro inicial e 20 produtos extras: selo “Exemplo”, faixa no topo do site, não levam a
+  nenhuma loja e ficam fora dos dados estruturados de preço. Remova em Produtos → “Remover dados de exemplo”.
+- Acessos fictícios da tela Dados (botão próprio, sempre com o selo “Demonstração”).
+
+**Depende de acesso ou aprovação**
+- Mercado Livre: aplicativo e autorização OAuth (adaptador pronto e testado com respostas simuladas; não testado contra a API real).
+- Shopee: acesso à Affiliate Open API (adaptador pronto, não testado contra a API real).
+- Amazon: conta aprovada e implementação da API oficial (pendente).
+- Petz, Cobasi, Petlove: arquivo ou feed autorizado (importação pronta).
+- Frete por CEP: só com a integração do Mercado Livre ativa; nas outras lojas o site diz “frete não cotado”.
+- Envio dos e-mails de “Avisar oferta”: serviço de e-mail (`EMAIL_API_KEY`, `EMAIL_FROM`) e rotina de envio.
+- Logotipos de lojas e marcas: arquivos com autorização de uso (hoje, selos com iniciais).
 
 ## Estrutura
 
 ```
-src/
-  app/                      rotas (App Router)
-    (site)/                 site público (layout com cabeçalho e rodapé)
-    admin/                  área administrativa (layout próprio, protegida)
-    [especie]/[[...filtros]]  funil: /caes/racao-seca/adulto/medio/premium/golden
-    produto/[slug]            página do produto
-    ir/[offerId]              saída para a loja (simulada na Fase 0)
-    api/relacionados          itens da mesma loja para o painel pós-clique
-  components/               UI (ui/ = base shadcn; funnel/, offers/, product/…)
-  config/                   site.ts (nome, textos) e taxonomy.ts (vocabulário do funil)
-  data/mock/                dados fictícios tipados (marcas, lojas, produtos, ofertas, histórico, complementares)
-  lib/
-    data/                   camada de dados: DataSource + mock-source (trocar por Supabase na Fase 1)
-    affiliate/              buildAffiliateUrl (cadeia API → manual → regra → comum) + config por env
-    pricing/                preço/kg, ordenação honesta (empate de 1%), selos, calculadora
-    related/                ranking do “Compre junto” (relevância × comissão, mesma loja, diversidade)
-    funnel/                 leitura/escrita da URL do funil
-  types/catalog.ts          modelo de dados (espelha as tabelas planejadas)
-tests/                      Vitest
+db/migrations/              SQL versionado (aplicado na abertura ou com npm run db:migrate)
+scripts/                    db.ts (migrar, recriar, remover exemplos, atualizar preços) e hash de senha
+src/app/(site)/             site público: início, produto, /ir (saída para a loja), institucionais
+src/app/admin/              painel: produtos, ofertas e alertas, lojas, dados, login
+src/app/api/                eventos de uso, frete por CEP, avisos de preço, cron de preços
+src/lib/db/                 conexão, migrações e cadastro inicial
+src/lib/domain/             produtos, ofertas (correções e sincronização), lojas, alertas, validações
+src/lib/integrations/       interface única, adaptadores por loja, cliente HTTP, sincronização, CSV
+src/lib/catalog/public.ts   o que o site mostra (regras de exibição de preço, desatualizado, exemplo)
+tests/                      Vitest: domínio, integrações, busca, relatórios
 ```
 
-### Como a camada de dados será trocada
-
-Componentes e páginas só importam de `@/lib/data` (`getOffers(filtros)`, `getProduct(slug)`, `getRelated(produto, loja)`…).
-Essas funções seguem a interface `DataSource` (`src/lib/data/types.ts`). Na Fase 1 basta criar `supabase-source.ts`
-implementando a mesma interface e trocar uma linha em `src/lib/data/index.ts`.
-
-## Regras de negócio já refletidas no front
-
-- Ordenação sempre pelo menor preço unitário; a comissão só desempata diferenças de até 1% (`rankOffersHonestly`, com testes).
-- Todo link de saída passa por `/ir/[offerId]`, com `rel="sponsored nofollow noopener"` e `target="_blank"`.
-- O painel pós-clique não é modal, não atrasa o redirect e não tem contagem regressiva.
-- “Compre junto” com rótulo “Sugestões — podemos receber comissão por compras”.
-- Ofertas suspeitas (`status: pending_review`) não aparecem no site.
-- Logos: placeholder com iniciais e cor; ícones próprios/lucide; nenhuma imagem de terceiros.
-
-## TODOs que dependem de você
-
-- [ ] Nome definitivo do site (`NEXT_PUBLIC_SITE_NAME`) e domínio.
-- [ ] Amazon: confirmar o percentual de **Pet Shop** na tabela oficial do Associados (o mock usa 11%, conforme o briefing) e criar as tags por categoria. A PA-API foi substituída pela **Creators API**, que exige vendas qualificadas recentes para liberar acesso.
-- [ ] Mercado Livre: não há API pública oficial para gerar link de afiliado — os links são gerados no painel do afiliado e cadastrados pelo admin (passo 2 da cadeia). Confirmar o percentual da categoria pet.
-- [ ] Shopee: criar credenciais da Affiliate Open API (GraphQL em `open-api.affiliate.shopee.com.br`) — `productOfferV2` (busca) e `generateShortLink` (link curto).
-- [ ] Petz: confirmar se o Parceiro Petz permite deeplink direto para produto.
-- [ ] Cobasi/Awin: exige CNPJ; obter `awinaffid` e o `awinmid` da Cobasi.
-- [ ] Petlove e Magalu: verificar se há programa ativo (hoje tratadas como loja de referência).
-- [ ] Supermercado de referência em Curitiba (o mock usa o fictício “Mercado Exemplo”).
-- [ ] Textos legais (Termos, Privacidade/LGPD, Cookies) estão provisórios — revisar com assessoria jurídica.
-
-## Próximas fases (esboço)
-
-1. **Fundação** — migrations Supabase (`categories`, `brands`, `product_lines`, `products`, `stores`, `offers`, `price_history`,
-   `commission_rates`, `complementary_rules`, `clicks`, `contact_messages`) com RLS; seed; `supabase-source.ts`; `/ir/[offerId]`
-   como Route Handler (registra clique + 302); contato gravando no banco.
-2. **Coleta Amazon + Mercado Livre + Shopee** — worker em `/workers` (fetch/JSON; Playwright só se necessário), parser de peso
-   com testes e fallback LLM com cache, histórico, GitHub Actions a cada 2 dias + quintas.
-3. **Admin** — Supabase Auth + papel admin; fila de revisão, “ofertas sem link de afiliado” por cliques, auditoria diária de links, relatórios.
-4. **Lojas pet, calculadora com tabelas reais e SEO completo** (ISR, sitemap, Product/AggregateOffer em todas as páginas).
-5. **Alertas de queda de preço** (e-mail/Telegram; WhatsApp só via API oficial com opt-in).
+Para cerca de 1.500 produtos: o catálogo público vai ao navegador em formato compacto (sem links de afiliado) e a busca
+roda no navegador; se crescer bem além disso, mova a busca para o servidor (`src/lib/comparator/search.ts` é função pura).

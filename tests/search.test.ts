@@ -1,3 +1,5 @@
+import { tmpdir } from "node:os";
+
 import { beforeAll, describe, expect, it, vi } from "vitest";
 
 import { EMPTY_FILTERS, facetCounts, groupByFamily, matchesFilters, priceSignal, readUrlState, writeUrlState } from "@/lib/comparator/filters";
@@ -10,7 +12,8 @@ let items: ComparatorItem[];
 let index: SearchIndex;
 
 beforeAll(async () => {
-  const { getCatalog } = await import("@/lib/data");
+  process.env.DATABASE_PATH = `${tmpdir()}/racao-busca-${process.pid}-${Date.now()}.db`;
+  const { getCatalog } = await import("@/lib/catalog/public");
   items = await getCatalog();
   index = buildSearchIndex(items);
 });
@@ -54,11 +57,11 @@ describe("searchItems", () => {
   it("aceita nome incompleto: Royal Mini", () => {
     const r = searchItems(index, "Royal Mini");
     expect(r.mode).toBe("exact");
-    expect(titles(r.items).every((t) => t.includes("Royal Canin Mini"))).toBe(true);
+    expect(titles(r.items).every((t) => t.includes("Royal Canin") && t.includes("Mini"))).toBe(true);
     // Cada peso é um item separado.
-    const weights = r.items.filter((i) => i.title === "Royal Canin Mini Adult").map((i) => i.netWeightGrams);
+    const weights = r.items.filter((i) => i.title.includes("Mini Adult")).map((i) => i.netWeightGrams);
     expect(new Set(weights).size).toBe(weights.length);
-    expect(weights.length).toBeGreaterThanOrEqual(3);
+    expect(weights.sort((a, b) => a - b)).toEqual([2500, 7500]);
   });
 
   it("busca por tipo: ração gato castrado", () => {
@@ -84,7 +87,7 @@ describe("searchItems", () => {
   it("tolera letras trocadas e sem acento", () => {
     expect(searchItems(index, "royla canin").items[0].brand.slug).toBe("royal-canin");
     expect(searchItems(index, "premier gatos castrados salmao").items[0].brand.slug).toBe("premier");
-    expect(searchItems(index, "equilibrio senior").items[0].brand.slug).toBe("equilibrio");
+    expect(searchItems(index, "guabi natral gatos").items[0].brand.slug).toBe("guabi-natural");
   });
 
   it("mostra os mais próximos quando o peso não existe", () => {
@@ -145,8 +148,8 @@ describe("filtros", () => {
   it("agrupa pesos da mesma fórmula num cartão só", () => {
     const groups = groupByFamily(items, items);
     expect(groups.length).toBeLessThan(items.length);
-    const mini = groups.find((g) => g.family === "royal-canin-mini-adult")!;
-    expect(mini.all.map((i) => i.netWeightGrams)).toEqual([1000, 2500, 7500]);
+    const mini = groups.find((g) => g.items.some((i) => i.title.includes("Mini Adult")))!;
+    expect(mini.all.map((i) => i.netWeightGrams)).toEqual([2500, 7500]);
   });
 
   it("URL ida e volta, com valores repetidos", () => {

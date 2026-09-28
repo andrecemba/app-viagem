@@ -2,11 +2,12 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowRight } from "lucide-react";
+import { AlertTriangle, ArrowRight } from "lucide-react";
 
 import { defaultItem, unitPriceOf, type ItemGroup } from "@/lib/comparator/filters";
 import { itemTopics, packageLabel, storeCountLabel } from "@/lib/comparator/labels";
 import { formatBRL, formatWeight } from "@/lib/format";
+import { timeAgo } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
 import { BrandSwatch } from "./brand-swatch";
@@ -82,11 +83,14 @@ export function FamilyCard({ group }: { group: ItemGroup }) {
             {item.bestPrice == null ? (
               <>
                 <p className="text-[0.6875rem] font-medium text-muted-foreground">Menor preço</p>
-                <p className="text-sm font-medium">Sem ofertas ativas</p>
+                <p className="text-sm font-medium">{item.offers.length ? "Sem preço disponível agora" : "Sem ofertas cadastradas"}</p>
               </>
             ) : (
               <>
-                <p className="text-[0.6875rem] font-medium text-muted-foreground">Menor preço · {storeCountLabel(item.storeCount)}</p>
+                <p className="flex flex-wrap items-center gap-x-1.5 text-[0.6875rem] font-medium text-muted-foreground">
+                  Menor preço · {storeCountLabel(item.storeCount)}
+                  {item.isDemo && <DemoTag />}
+                </p>
                 <p className="flex flex-wrap items-baseline gap-x-2">
                   <span className="font-display text-xl font-bold tabular-nums">{formatBRL(item.bestPrice)}</span>
                   {unit && (
@@ -97,6 +101,11 @@ export function FamilyCard({ group }: { group: ItemGroup }) {
                   )}
                 </p>
                 <PriceSignalTag item={item} className="mt-1.5" />
+                <p suppressHydrationWarning className={cn("mt-1.5 flex items-center gap-1 text-xs", item.bestPriceStale ? "font-medium text-warning-foreground" : "text-muted-foreground")}>
+                  {item.bestPriceStale && <AlertTriangle className="size-3.5" aria-hidden />}
+                  {item.bestPriceStale ? "Preço desatualizado · " : "Atualizado "}
+                  {timeAgo(item.updatedAt)}
+                </p>
               </>
             )}
           </div>
@@ -110,5 +119,13 @@ export function FamilyCard({ group }: { group: ItemGroup }) {
         </div>
       </div>
     </article>
+  );
+}
+
+export function DemoTag() {
+  return (
+    <span className="rounded bg-violet-100 px-1 py-px text-[0.625rem] font-bold tracking-wide text-violet-900 uppercase dark:bg-violet-950 dark:text-violet-100" title="Preço fictício de demonstração">
+      Exemplo
+    </span>
   );
 }

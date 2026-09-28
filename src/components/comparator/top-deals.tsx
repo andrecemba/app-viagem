@@ -46,6 +46,7 @@ export function TopDeals({ deals, basedOnDemand, sendingActive }: { deals: Deal[
                     {item.flavor && ` · ${item.flavor}`} · {formatWeight(item.netWeightGrams)}
                   </span>
                   <span className="block text-xs text-muted-foreground tabular-nums">
+                    {item.isDemo && <span className="mr-1 rounded bg-violet-100 px-1 text-[0.625rem] font-bold text-violet-900 uppercase dark:bg-violet-950 dark:text-violet-100">Exemplo</span>}
                     <strong className="text-sm text-foreground">{formatBRL(item.bestPrice!)}</strong>
                     {unit && ` · ${formatBRL(unit.value)}${unit.label}`} · média {formatBRL(average)}
                   </span>

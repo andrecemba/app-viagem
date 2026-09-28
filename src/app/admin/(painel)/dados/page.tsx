@@ -5,13 +5,14 @@ import { demoEventsAction, saveSettingsAction } from "@/app/admin/actions";
 import { BarList, DailyColumns, Stat } from "@/components/admin/charts";
 import { brl, btn, DemoBadge, EmptyState, Flash, input, PageHeader } from "@/components/admin/ui";
 import { StoreLogo } from "@/components/icons/store-logo";
-import { ADMIN_STORES } from "@/config/stores";
 import { requireAdmin } from "@/lib/admin/auth";
-import { adminRepo } from "@/lib/admin/repository";
+import { getDb } from "@/lib/db";
+import { getProduct, productName } from "@/lib/domain/products";
+import { getSettings } from "@/lib/domain/settings";
+import { listStores } from "@/lib/domain/stores";
 import { buildReport, type RankRow } from "@/lib/analytics/report";
 import { hasDemoEvents, readEvents } from "@/lib/analytics/store";
-import { catalogSource } from "@/lib/data";
-import { alertSendingActive, readPriceAlerts } from "@/lib/price-alerts/store";
+import { alertCountsByProduct, alertSendingActive } from "@/lib/price-alerts/store";
 import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Dados" };
@@ -44,27 +45,27 @@ export default async function DataPage({ searchParams }: PageProps<"/admin/dados
   const sp = await searchParams;
   const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
   const period = PERIODS.find((p) => String(p) === one(sp.periodo)) ?? 30;
-  const demoAvailable = await hasDemoEvents();
+  const dbc = getDb();
+  const demoAvailable = hasDemoEvents(dbc);
   const source = one(sp.fonte) === "demo" && demoAvailable ? "demo" : "real";
-  const db = await adminRepo.read();
+  const settings = getSettings(dbc);
+  const stores = listStores(dbc);
+  const storeById = new Map(stores.map((s) => [s.id, s]));
 
   const to = new Date();
   const from = new Date(to.getTime() - (period - 1) * 86400_000);
   from.setHours(0, 0, 0, 0);
-  const events = await readEvents(source, from.toISOString());
-  const report = buildReport(events, { from, to, conversionRate: db.settings.conversionRate, commission: db.settings.commission });
+  const events = readEvents(dbc, source, from.toISOString());
+  const report = buildReport(events, { from, to, conversionRate: settings.conversionRate, commission: settings.commission, storeNames: Object.fromEntries(stores.map((s) => [s.id, s.name])) });
   const t = report.totals;
   const ctr = t.views ? t.clicks / t.views : null;
   const isDemo = source === "demo";
-  const alerts = (await readPriceAlerts()).filter((a) => a.at >= from.toISOString());
-  const alertsByProduct = new Map<string, { label: string; count: number; targets: number }>();
-  for (const a of alerts) {
-    const key = a.productId ?? "__geral";
-    const row = alertsByProduct.get(key) ?? { label: a.productName ?? "Ofertas do dia (qualquer ração)", count: 0, targets: 0 };
-    row.count++;
-    if (a.targetPrice != null) row.targets++;
-    alertsByProduct.set(key, row);
-  }
+  const alertCounts = alertCountsByProduct(dbc, from.toISOString());
+  const alertTotal = alertCounts.reduce((n, r) => n + r.count, 0);
+  const alertRows = alertCounts.map((r) => {
+    const p = r.productId != null ? getProduct(dbc, r.productId) : null;
+    return { key: String(r.productId ?? "geral"), label: p ? productName(p) : "Ofertas do dia (qualquer ração)", value: r.count, detail: r.targets ? `${r.targets} com preço desejado` : undefined };
+  });
 
   const href = (patch: Record<string, string | undefined>) => {
     const p = new URLSearchParams();
@@ -118,11 +119,6 @@ export default async function DataPage({ searchParams }: PageProps<"/admin/dados
           <DemoBadge /> <strong>Números fictícios</strong>, gerados para mostrar como a tela funciona. Não representam acessos reais.
         </p>
       )}
-      {!isDemo && catalogSource() === "exemplo" && (
-        <p className="text-xs text-muted-foreground">
-          O site ainda mostra o catálogo de exemplo: os acessos reais abaixo são de rações ilustrativas.
-        </p>
-      )}
 
       {events.length === 0 ? (
         <EmptyState title="Nenhum acesso registrado neste período.">
@@ -160,7 +156,7 @@ export default async function DataPage({ searchParams }: PageProps<"/admin/dados
                   key: s.store,
                   label: (
                     <span className="inline-flex items-center gap-2">
-                      <StoreLogo slug={s.store} size={18} /> {s.name}
+                      <StoreLogo name={s.name} color={storeById.get(s.store)?.color ?? "#6b7280"} logo={storeById.get(s.store)?.logoUrl} size={18} /> {s.name}
                     </span>
                   ),
                   value: s.clicks,
@@ -198,19 +194,17 @@ export default async function DataPage({ searchParams }: PageProps<"/admin/dados
 
       {!isDemo && (
         <Panel
-          title={`Pedidos de “Avisar oferta” · ${alerts.length}`}
+          title={`Pedidos de “Avisar oferta” · ${alertTotal}`}
           description={
             alertSendingActive()
               ? "Pessoas que pediram aviso de preço. Os e-mails ficam só no servidor."
-              : "Pessoas que pediram aviso de preço. O envio dos e-mails ainda não está ligado (falta o serviço de envio, ver docs/ADMIN.md); os pedidos ficam guardados."
+              : "Pessoas que pediram aviso de preço. O envio dos e-mails ainda não está ligado (falta o serviço de envio, ver o README); os pedidos ficam guardados."
           }
         >
           <BarList
             valueLabel="pedidos"
             empty="Nenhum pedido de aviso no período."
-            rows={[...alertsByProduct.entries()]
-              .sort((a, b) => b[1].count - a[1].count)
-              .map(([key, r]) => ({ key, label: r.label, value: r.count, detail: r.targets ? `${r.targets} com preço desejado` : undefined }))}
+            rows={alertRows}
           />
         </Panel>
       )}
@@ -242,7 +236,7 @@ export default async function DataPage({ searchParams }: PageProps<"/admin/dados
                   <tr key={s.store}>
                     <td className="px-4 py-2">
                       <span className="inline-flex items-center gap-2">
-                        <StoreLogo slug={s.store} size={18} /> {s.name}
+                        <StoreLogo name={s.name} color={storeById.get(s.store)?.color ?? "#6b7280"} logo={storeById.get(s.store)?.logoUrl} size={18} /> {s.name}
                       </span>
                     </td>
                     <td className="px-2 py-2 text-right tabular-nums">{s.clicks}</td>
@@ -270,14 +264,14 @@ export default async function DataPage({ searchParams }: PageProps<"/admin/dados
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
             <label className="space-y-1 text-xs">
               <span className="font-medium">Conversão</span>
-              <input name="conversao" inputMode="decimal" defaultValue={db.settings.conversionRate != null ? String(db.settings.conversionRate * 100).replace(".", ",") : ""} placeholder="ex.: 5" className={input} />
+              <input name="conversao" inputMode="decimal" defaultValue={settings.conversionRate != null ? String(settings.conversionRate * 100).replace(".", ",") : ""} placeholder="ex.: 5" className={input} />
             </label>
-            {ADMIN_STORES.map((s) => {
-              const v = db.settings.commission[s.slug];
+            {stores.map((s) => {
+              const v = settings.commission[s.id];
               return (
-                <label key={s.slug} className="space-y-1 text-xs">
+                <label key={s.id} className="space-y-1 text-xs">
                   <span className="font-medium">{s.name}</span>
-                  <input name={`comissao_${s.slug}`} inputMode="decimal" defaultValue={v != null ? String(Math.round(v * 10000) / 100).replace(".", ",") : ""} className={input} />
+                  <input name={`comissao_${s.id}`} inputMode="decimal" defaultValue={v != null ? String(Math.round(v * 10000) / 100).replace(".", ",") : ""} className={input} />
                 </label>
               );
             })}

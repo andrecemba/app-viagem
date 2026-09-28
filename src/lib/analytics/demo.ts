@@ -50,9 +50,9 @@ export function generateDemoEvents(items: ComparatorItem[], now = new Date(), da
       if (rand() < 0.15 && item.species === "caes") events.push({ at: at(3500), type: "filtro", dim: "porte", value: pick(item.sizes ?? ["medio"]) });
       events.push({ at: at(5000), type: "produto", ...snapshotOf(item) });
       if (rand() < 0.38) {
-        const offers = item.offers.filter((o) => o.inStock);
+        const offers = item.offers.filter((o) => o.inStock && o.price != null);
         const offer = rand() < 0.65 ? offers[0] : pick(offers);
-        if (offer) events.push({ at: at(9000), type: "clique", ...snapshotOf(item), store: offer.storeSlug, price: offer.price, hasLink: true });
+        if (offer) events.push({ at: at(9000), type: "clique", ...snapshotOf(item), store: offer.storeSlug, price: offer.price ?? undefined, hasLink: true });
       }
     }
   }
