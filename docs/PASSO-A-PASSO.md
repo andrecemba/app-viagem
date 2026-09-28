@@ -278,6 +278,20 @@ e a frase **“A API está funcionando”**.
 4. Daí em diante, **Atualizar agora pela API** (na oferta) e a atualização programada renovam o preço sozinhos.
    O link de afiliado continua sendo colado por você: ele não vem da API.
 
+### 8.5 Ofertas que você já cadastrou à mão (ou por planilha sem API)
+
+Elas continuam manuais até você ligar a atualização automática:
+
+- **Uma oferta:** abra a oferta (**Ofertas e alertas** → clique nela) e clique em **Atualizar automaticamente pela API**.
+  Na hora, preço, disponibilidade e frete grátis são trocados pelos do anúncio oficial. O link de afiliado continua o seu.
+- **Todas de uma vez:** em **Lojas**, no Mercado Livre, clique em **Atualizar N oferta(s) manual(is) pela API**.
+- Para voltar a controlar à mão: na oferta, **Voltar para cadastro manual** (os valores atuais ficam).
+
+Os botões ficam cinza enquanto a API não estiver conectada (8.2) ou se a oferta não tiver o ID do anúncio (MLB…).
+
+**Atualizar os preços depois:** em **Lojas → Atualizar agora** (Mercado Livre), ou no terminal `npm run precos:atualizar`.
+Só são consultadas as ofertas com mais de ~43 horas desde a última consulta (marque “incluir as não vencidas” para todas).
+
 ---
 
 ## Parte 9 — Importar várias rações por planilha

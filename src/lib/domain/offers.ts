@@ -391,6 +391,38 @@ export function setOfferActive(db: Db, id: number, active: boolean, actor: strin
   addEvent(db, { offerId: id, kind: "edicao", actor, price: null, availability: null, message: active ? "Oferta reativada." : "Oferta desativada (sai do site)." });
 }
 
+/**
+ * Liga ou desliga a atualização automática de uma oferta. Oferta manual com ID
+ * do anúncio passa a ser atualizada pela API da loja (preço, disponibilidade,
+ * frete grátis, peso e foto); o link e o link de afiliado continuam os cadastrados.
+ * Voltar para manual mantém os valores atuais.
+ */
+export function setOfferDataSource(db: Db, id: number, source: "api" | "manual", actor: string): Offer {
+  const offer = getOffer(db, id);
+  if (!offer) throw new ValidationError("Oferta não encontrada.");
+  if (offer.dataSource === source) return offer;
+  if (source === "api") {
+    const store = getStore(db, offer.storeId);
+    if (store?.mode !== "api") throw new ValidationError(`${store?.name ?? "A loja"} não está configurada para API (Lojas → Editar loja).`);
+    if (!offer.externalId) throw new ValidationError("A oferta não tem o ID do anúncio (MLB…): edite a oferta e informe o ID antes.");
+  }
+  db.prepare("UPDATE offers SET data_source = ?, updated_at = ? WHERE id = ?").run(source, nowIso(), id);
+  addEvent(db, {
+    offerId: id,
+    kind: "edicao",
+    actor,
+    price: null,
+    availability: null,
+    message: source === "api" ? "Atualização automática pela API ligada." : "Voltou para cadastro manual (valores atuais mantidos).",
+  });
+  return getOffer(db, id)!;
+}
+
+/** Ofertas manuais de uma loja que já têm o ID do anúncio (podem passar para a API). */
+export function manualOffersWithId(db: Db, storeId: string): Offer[] {
+  return listOffers(db, { storeId }).filter((o) => o.dataSource === "manual" && o.externalId && !o.isDemo);
+}
+
 // ── Sincronização ───────────────────────────────────────────────────────
 
 export interface SyncValues {

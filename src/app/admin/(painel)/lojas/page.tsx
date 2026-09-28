@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
 
-import { importCsvAction, saveSettingsAction, saveStoreAction, syncStoreAction } from "@/app/admin/actions";
+import { importCsvAction, saveSettingsAction, saveStoreAction, syncStoreAction, useApiForStoreAction } from "@/app/admin/actions";
 import { btn, Flash, formatDateTime, input, PageHeader, Tag } from "@/components/admin/ui";
 import { StoreLogo } from "@/components/icons/store-logo";
 import { requireAdmin } from "@/lib/admin/auth";
 import { getDb } from "@/lib/db";
 import { getSettings } from "@/lib/domain/settings";
+import { manualOffersWithId } from "@/lib/domain/offers";
 import { listStores } from "@/lib/domain/stores";
 import type { Store } from "@/lib/domain/types";
 import { ADAPTER_IDS, sourceForStore, sources } from "@/lib/integrations";
@@ -133,6 +134,7 @@ export default async function StoresPage({ searchParams }: PageProps<"/admin/loj
         {stores.map((s) => {
           const src = sourceForStore(s, db);
           const st = src.status();
+          const manualWithId = s.mode === "api" && src.fetchListing ? manualOffersWithId(db, s.id).length : 0;
           const caps = src.capabilities();
           return (
             <li key={s.id} id={`loja-${s.id}`} className="scroll-mt-20 rounded-lg border">
@@ -178,6 +180,17 @@ export default async function StoresPage({ searchParams }: PageProps<"/admin/loj
                       <label className="flex items-center gap-1 text-xs">
                         <input type="checkbox" name="todas" className="accent-foreground" /> incluir as não vencidas
                       </label>
+                    </form>
+                  )}
+                  {manualWithId > 0 && (
+                    <form action={useApiForStoreAction} className="flex flex-wrap items-center gap-2">
+                      <input type="hidden" name="id" value={s.id} />
+                      <button type="submit" disabled={st.state !== "ativa"} className={btn.primary}>
+                        Atualizar {manualWithId} oferta(s) manual(is) pela API
+                      </button>
+                      <span className="text-xs text-muted-foreground">
+                        {st.state === "ativa" ? "Ofertas cadastradas à mão com o ID do anúncio passam a ser atualizadas sozinhas." : "Conecte a API antes (npm run ml:conectar)."}
+                      </span>
                     </form>
                   )}
                   {s.mode === "feed" && (

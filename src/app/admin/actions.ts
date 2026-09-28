@@ -12,7 +12,7 @@ import { getCatalog } from "@/lib/catalog/public";
 import { DOG_SIZE_VALUES, FOOD_TYPE_VALUES, LIFE_STAGE_VALUES, NEEDS } from "@/lib/catalog/vocab";
 import { getDb } from "@/lib/db";
 import { removeDemo } from "@/lib/db/seed";
-import { createOffer, getOffer, revertOverride, setMatchStatus, setOfferActive, updateOffer } from "@/lib/domain/offers";
+import { createOffer, getOffer, manualOffersWithId, revertOverride, setMatchStatus, setOfferActive, setOfferDataSource, updateOffer } from "@/lib/domain/offers";
 import { getProduct, saveProduct, setProductActive, type ProductInput } from "@/lib/domain/products";
 import { saveSettings } from "@/lib/domain/settings";
 import { getStore, listStores, saveStore } from "@/lib/domain/stores";
@@ -302,7 +302,44 @@ export async function refreshOfferAction(formData: FormData) {
   back(`/admin/ofertas/${id}`, r.failed ? { erro: "A consulta falhou: veja o histórico. O último preço válido foi mantido." } : { aviso: "Oferta atualizada pela integração." });
 }
 
+/** Liga (e já roda) ou desliga a atualização automática pela API de uma oferta. */
+export async function setOfferSourceAction(formData: FormData) {
+  const { actor } = await requireAdmin();
+  const id = Number(text(formData, "id"));
+  const source = text(formData, "origem") === "api" ? "api" : "manual";
+  const returnTo = `/admin/ofertas/${id}`;
+  const db = getDb();
+  await attempt(returnTo, () => setOfferDataSource(db, id, source, actor));
+  if (source === "manual") {
+    refresh();
+    back(returnTo, { aviso: "Oferta voltou para cadastro manual. Os valores atuais foram mantidos." });
+  }
+  const r = await refreshOffer(db, id);
+  refresh();
+  if (r.skipped) back(returnTo, { aviso: "Atualização automática ligada.", erro: `Ainda não deu para consultar: ${r.skipped}` });
+  back(
+    returnTo,
+    r.failed
+      ? { aviso: "Atualização automática ligada.", erro: "A primeira consulta falhou: veja o histórico abaixo. O preço cadastrado foi mantido." }
+      : { aviso: "Atualização automática ligada: preço, disponibilidade e frete grátis vieram do anúncio oficial." },
+  );
+}
+
 // ── Lojas ──────────────────────────────────────────────────────────────
+
+/** Passa todas as ofertas manuais (com ID do anúncio) da loja para a API e já consulta. */
+export async function useApiForStoreAction(formData: FormData) {
+  const { actor } = await requireAdmin();
+  const storeId = text(formData, "id");
+  const db = getDb();
+  const offers = manualOffersWithId(db, storeId);
+  const ids = await attempt("/admin/lojas", () => offers.map((o) => setOfferDataSource(db, o.id, "api", actor).id));
+  const r = ids.length ? await syncStore(db, storeId, { trigger: "manual", offerIds: ids }) : null;
+  refresh();
+  if (!r) back("/admin/lojas", { aviso: "Nenhuma oferta manual com ID do anúncio nesta loja." });
+  if (r.skipped) back("/admin/lojas", { aviso: `${ids.length} oferta(s) com atualização automática ligada.`, erro: `Ainda não deu para consultar: ${r.skipped}` });
+  back("/admin/lojas", { aviso: `${ids.length} oferta(s) passaram para a API: ${r.updated} atualizada(s), ${r.failed} com erro (veja Ofertas e alertas).` });
+}
 
 export async function saveStoreAction(formData: FormData) {
   await requireAdmin();

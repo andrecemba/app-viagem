@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { refreshOfferAction, revertOverrideAction, setMatchAction, setOfferActiveAction, updateOfferAction } from "@/app/admin/actions";
+import { refreshOfferAction, revertOverrideAction, setMatchAction, setOfferActiveAction, setOfferSourceAction, updateOfferAction } from "@/app/admin/actions";
 import { brl, btn, DemoBadge, Flash, formatDateTime, input, Tag } from "@/components/admin/ui";
 import { StoreLogo } from "@/components/icons/store-logo";
 import { requireAdmin } from "@/lib/admin/auth";
@@ -108,10 +108,34 @@ export default async function OfferPage({ params, searchParams }: PageProps<"/ad
               Atualizar agora pela API
             </button>
           </form>
+        ) : offer.dataSource === "manual" && store.mode === "api" && src.fetchListing ? (
+          <form action={setOfferSourceAction} className="flex flex-wrap items-center gap-2">
+            <input type="hidden" name="id" value={offer.id} />
+            <input type="hidden" name="origem" value="api" />
+            <button type="submit" disabled={src.status().state !== "ativa" || !offer.externalId} className={btn.primary}>
+              Atualizar automaticamente pela API
+            </button>
+            <span className="text-xs text-muted-foreground">
+              {!offer.externalId
+                ? "Informe o ID do anúncio para ligar."
+                : src.status().state !== "ativa"
+                  ? `API do ${store.name} não conectada (npm run ml:conectar).`
+                  : "Preço, disponibilidade e frete grátis passam a vir do anúncio oficial."}
+            </span>
+          </form>
         ) : (
           <span className="inline-flex h-8 items-center text-xs text-muted-foreground">
             {offer.dataSource === "api" ? `Atualização pela API indisponível: ${src.status().note}` : "Sem integração ativa: atualize o preço no formulário."}
           </span>
+        )}
+        {offer.dataSource === "api" && (
+          <form action={setOfferSourceAction}>
+            <input type="hidden" name="id" value={offer.id} />
+            <input type="hidden" name="origem" value="manual" />
+            <button type="submit" className={btn.ghost}>
+              Voltar para cadastro manual
+            </button>
+          </form>
         )}
         <form action={setMatchAction}>
           <input type="hidden" name="id" value={offer.id} />

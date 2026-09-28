@@ -125,3 +125,49 @@ describe("importação de planilha", () => {
     await expect(importCatalogCsv(db, "nome;preco\nx;1", "teste")).rejects.toThrow(/Faltam colunas/);
   });
 });
+
+describe("oferta manual passa para a API", () => {
+  it("liga a atualização automática e a sincronização troca preço e disponibilidade, mantendo o link de afiliado", async () => {
+    const { setOfferDataSource, manualOffersWithId } = await import("@/lib/domain/offers");
+    const { syncStore } = await import("@/lib/integrations/sync");
+    const { clearIntegrationCache } = await import("@/lib/integrations/http");
+    const db = emptyDb();
+    const [r] = await importCatalogCsv(db, withValues("2,5 kg", "149,90"), "teste");
+    expect(manualOffersWithId(db, "mercado-livre").map((o) => o.id)).toEqual([r.offerId]);
+
+    // Sem API na loja de outra forma, a sincronização ignora ofertas manuais.
+    process.env.MERCADOLIVRE_ACCESS_TOKEN = "tok-teste";
+    (globalThis as { offerSources?: unknown }).offerSources = undefined;
+    clearIntegrationCache();
+    const fetchMock = vi.fn(async (_url: string | URL | Request) =>
+      Response.json({
+        id: "MLB7125580428",
+        title: "Ração Fórmula Natural Fresh Meat Filhotes Mini e Pequeno 2,5 kg",
+        price: 139.9,
+        currency_id: "BRL",
+        status: "active",
+        available_quantity: 5,
+        shipping: { free_shipping: true },
+        attributes: [],
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      expect((await syncStore(db, "mercado-livre", { trigger: "teste", force: true })).checked).toBe(0);
+
+      setOfferDataSource(db, r.offerId!, "api", "teste");
+      const report = await syncStore(db, "mercado-livre", { trigger: "teste", offerIds: [r.offerId!] });
+      expect(report).toMatchObject({ checked: 1, updated: 1, failed: 0 });
+      expect(String(fetchMock.mock.calls[0][0])).toContain("/items/MLB7125580428");
+      const offer = getOffer(db, r.offerId!)!;
+      expect(offer).toMatchObject({ dataSource: "api", price: 139.9, previousPrice: 149.9, availability: "disponivel", freeShipping: true, affiliateUrl: "https://meli.la/17cvoar" });
+
+      setOfferDataSource(db, r.offerId!, "manual", "teste");
+      expect(getOffer(db, r.offerId!)).toMatchObject({ dataSource: "manual", price: 139.9 });
+    } finally {
+      vi.unstubAllGlobals();
+      delete process.env.MERCADOLIVRE_ACCESS_TOKEN;
+      (globalThis as { offerSources?: unknown }).offerSources = undefined;
+    }
+  });
+});
