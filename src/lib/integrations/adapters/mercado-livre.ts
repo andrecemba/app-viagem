@@ -59,6 +59,18 @@ export function parseMercadoLivreUrl(url: string) {
   return { externalId: null, hint: "Não encontramos o ID do anúncio (MLB…). Digite-o no campo abaixo." };
 }
 
+/** Aceita o endereço inteiro para onde o Mercado Livre mandou (…?code=TG-…) ou só o código. */
+export function codeFromRedirect(input: string): string | null {
+  const text = input.trim();
+  try {
+    const code = new URL(text).searchParams.get("code");
+    if (code) return code;
+  } catch {
+    /* não é URL: pode ser o código puro */
+  }
+  return /^TG-[\w-]+$/.test(text) ? text : null;
+}
+
 export function createMercadoLivreSource(deps: MercadoLivreDeps): OfferSource {
   const { env, fetchImpl, tokenStore } = deps;
   const source = "mercado-livre";

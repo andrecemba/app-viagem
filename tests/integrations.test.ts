@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { parseAmazonUrl, createAmazonSource } from "@/lib/integrations/adapters/amazon";
 import { parseGenericUrl } from "@/lib/integrations/adapters/manual";
-import { createMercadoLivreSource, parseMercadoLivreUrl } from "@/lib/integrations/adapters/mercado-livre";
+import { codeFromRedirect, createMercadoLivreSource, parseMercadoLivreUrl } from "@/lib/integrations/adapters/mercado-livre";
 import { createShopeeSource, parseShopeeUrl } from "@/lib/integrations/adapters/shopee";
 import { clearIntegrationCache, redact } from "@/lib/integrations/http";
 import { IntegrationError } from "@/lib/integrations/types";
@@ -122,5 +122,14 @@ describe("links do Mercado Livre copiados do navegador", () => {
   it("entende o anúncio escolhido dentro da página de catálogo", () => {
     expect(parseMercadoLivreUrl("https://www.mercadolivre.com.br/racao/p/MLB12345678?pdp_filters=item_id%3AMLB3344556677").externalId).toBe("MLB3344556677");
     expect(parseMercadoLivreUrl("https://www.mercadolivre.com.br/racao/up/MLBU123456789?pdp_filters=item_id:MLB998877665").externalId).toBe("MLB998877665");
+  });
+});
+
+describe("codeFromRedirect (npm run ml:conectar)", () => {
+  it("tira o código do endereço de retorno ou aceita o código puro", () => {
+    expect(codeFromRedirect("https://www.google.com.br/?code=TG-65f1a2b3c4-123456")).toBe("TG-65f1a2b3c4-123456");
+    expect(codeFromRedirect("  TG-abc123-99  ")).toBe("TG-abc123-99");
+    expect(codeFromRedirect("https://www.google.com.br/")).toBeNull();
+    expect(codeFromRedirect("qualquer coisa")).toBeNull();
   });
 });

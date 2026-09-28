@@ -213,8 +213,70 @@ Depois de **48 horas**, o site marca o preço como **desatualizado** (em amarelo
 1. No painel, abra **Ofertas e alertas** (ou o produto) e clique na oferta.
 2. Troque o **Preço** e clique em **Salvar**. O preço antigo fica guardado no histórico.
 
-Para o preço atualizar sozinho, é preciso ligar a integração oficial do Mercado Livre (criar um aplicativo no
-site de desenvolvedores do Mercado Livre). Os passos técnicos estão no `README.md`, seção **Integrações**.
+Para o preço atualizar sozinho, ligue a API oficial do Mercado Livre (Parte 8).
+
+---
+
+## Parte 8 — Ligar e testar a API do Mercado Livre (opcional)
+
+Com a API ligada, o painel busca preço, disponibilidade, frete grátis, peso e sabor direto do Mercado Livre,
+e o botão **Atualizar agora pela API** (na oferta) passa a funcionar. Sem ela, tudo continua funcionando no modo manual.
+
+### 8.1 Crie o aplicativo (uma vez só)
+
+1. Acesse **https://developers.mercadolivre.com.br** e entre com a **mesma conta** do Mercado Livre.
+2. Procure **Minhas aplicações** → **Criar uma aplicação** (os nomes podem mudar um pouco).
+3. Preencha:
+   - **Nome** e **descrição**: qualquer um, ex.: “Comparador de ração”.
+   - **URI de redirect**: `https://www.google.com.br/` (exatamente assim, com a barra no fim).
+   - **Escopos / permissões**: marque **leitura** (read) e **acesso offline** (offline_access). Sem o offline, a conexão cai em poucas horas.
+   - Se houver a opção **PKCE**, deixe **desligada**.
+   - Tópicos de notificação e URL de notificações: pode deixar em branco.
+4. Salve. Na tela do aplicativo aparecem o **ID do aplicativo** (Client ID, só números) e a **Chave secreta** (Client Secret).
+   **Não mande a chave secreta para ninguém**, nem em print.
+
+### 8.2 Conecte o site ao aplicativo
+
+Com o site desligado (Ctrl+C), na janela do terminal da pasta do site:
+
+```
+npm run ml:conectar
+```
+
+1. Cole o **Client ID** e aperte Enter.
+2. Cole a **Chave secreta** e aperte Enter.
+3. No redirect, só aperte **Enter** (usa `https://www.google.com.br/`).
+4. O programa mostra um link. Copie, abra no navegador, entre na conta e clique em **Permitir**.
+5. O navegador vai para o Google. **Copie o endereço inteiro** da barra (tem `?code=TG-…`), volte ao terminal, cole e aperte Enter.
+   O código vale só alguns minutos: se demorar, rode `npm run ml:conectar` de novo.
+
+Aparece **“Pronto! Mercado Livre conectado”**. As chaves ficam só no arquivo `.env.local` do seu computador.
+
+### 8.3 Teste a API com um anúncio
+
+```
+npm run ml:testar -- COLE_O_LINK_DO_ANUNCIO 01310100
+```
+
+(O número no fim é um CEP, para testar o frete. Pode tirar.)
+
+Se estiver tudo certo, aparecem título, preço, disponibilidade, frete grátis, peso e sabor do anúncio,
+e a frase **“A API está funcionando”**.
+
+| O que aparece | O que fazer |
+|---|---|
+| “Mercado Livre não conectado” | Rode `npm run ml:conectar` (8.2). |
+| “Link de página de catálogo (/p/…)” | Na página, clique no vendedor (“Outras opções de compra” ou o nome da loja), abra o anúncio dele e use esse link. |
+| “recusou o acesso (HTTP 401/403)” | Rode `npm run ml:conectar` de novo. Se continuar, o Mercado Livre pode não liberar anúncios de outros vendedores para o seu aplicativo: cadastre essa oferta pelo modo manual (Parte 5). |
+| “O Mercado Livre não devolveu o refresh token” | No aplicativo, marque **offline_access**, salve e conecte de novo. |
+
+### 8.4 Cadastrar usando a API
+
+1. Rode `npm run dev` de novo.
+2. Cadastre o produto (5.1). Em **Nova oferta**, cole o link do anúncio e clique em **Continuar**.
+3. Clique em **Buscar dados do anúncio pela API**: preço, disponibilidade, frete grátis, peso e sabor vêm preenchidos. **Confira** com o produto e salve.
+4. Daí em diante, **Atualizar agora pela API** (na oferta) e a atualização programada renovam o preço sozinhos.
+   O link de afiliado continua sendo colado por você: ele não vem da API.
 
 ---
 

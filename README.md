@@ -39,6 +39,8 @@ Guia para quem não é técnico (zerar e cadastrar rações do Mercado Livre): [
 | `npm run db:reset` | recria o banco local do zero, com o cadastro inicial e os exemplos (sempre com exemplos) |
 | `npm run db:sem-exemplos` | remove produtos e ofertas de exemplo (também há botão em Produtos) |
 | `npm run precos:atualizar` | roda a atualização de preços uma vez |
+| `npm run ml:conectar` | autoriza a conta no aplicativo do Mercado Livre (OAuth) e grava as chaves no `.env.local` |
+| `npm run ml:testar -- <link> [CEP]` | consulta um anúncio (e o frete) pela API oficial do Mercado Livre |
 | `npm test` · `npm run lint` · `npm run typecheck` · `npm run build` | verificações |
 
 ### Variáveis de ambiente
@@ -83,7 +85,7 @@ de afiliado. Nova loja com API: novo arquivo em `adapters/` + uma linha em `src/
 
 | Loja | Caminho que funciona hoje | Para ativar |
 |---|---|---|
-| Mercado Livre | Manual | Criar aplicativo em developers.mercadolivre.com.br, autorizar a conta e preencher `MERCADOLIVRE_CLIENT_ID`, `MERCADOLIVRE_CLIENT_SECRET`, `MERCADOLIVRE_REFRESH_TOKEN`. O adaptador usa `GET /items/{id}` (preço, status, estoque, frete grátis, atributos) e `GET /items/{id}/shipping_options?zip_code=` (frete por CEP). O link de afiliado vem do painel de afiliados e é colado na oferta. |
+| Mercado Livre | Manual | Criar aplicativo em developers.mercadolivre.com.br (escopos read e offline_access) e rodar `npm run ml:conectar`, que preenche `MERCADOLIVRE_CLIENT_ID`, `MERCADOLIVRE_CLIENT_SECRET`, `MERCADOLIVRE_REFRESH_TOKEN`; testar com `npm run ml:testar`. O adaptador usa `GET /items/{id}` (preço, status, estoque, frete grátis, atributos) e `GET /items/{id}/shipping_options?zip_code=` (frete por CEP). O link de afiliado vem do painel de afiliados e é colado na oferta. |
 | Shopee | Manual | Com acesso à Affiliate Open API: `SHOPEE_AFFILIATE_APP_ID`, `SHOPEE_AFFILIATE_SECRET` e `SHOPEE_AFFILIATE_ENABLED=1`; em Lojas, mude a Shopee para “API” com o adaptador Shopee. Traz preço e link de afiliado; não traz estoque nem frete por CEP. Preço em faixa (variações) não é importado. Confirme os campos na documentação da sua conta antes. |
 | Amazon | Manual, **sem preço público** | O site só mostra preço da Amazon obtido pela API oficial e recente (regra `somente_api`). Exige conta aprovada no Associados e a implementação da Creators API conferida com a documentação da conta; até lá a integração fica “pendente”. |
 | Petz, Cobasi, Petlove | Manual | Arquivo CSV ou feed autorizado: em Lojas, mude para “Arquivo / feed” com o adaptador CSV e importe (colunas `id_anuncio, preco, disponivel, titulo, frete_gratis`). Só atualiza ofertas já cadastradas. |
