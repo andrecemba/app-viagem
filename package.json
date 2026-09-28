@@ -18,7 +18,8 @@
     "configurar": "node scripts/configurar.mjs",
     "db:zerar": "tsx scripts/db.ts zerar",
     "ml:conectar": "tsx scripts/mercado-livre.ts conectar",
-    "ml:testar": "tsx scripts/mercado-livre.ts testar"
+    "ml:testar": "tsx scripts/mercado-livre.ts testar",
+    "ml:catalogo": "tsx scripts/mercado-livre.ts catalogo"
   },
   "dependencies": {
     "@radix-ui/react-accordion": "^1.2.20",

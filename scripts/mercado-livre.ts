@@ -2,14 +2,18 @@
  * Mercado Livre pela linha de comando.
  *   npm run ml:conectar              autoriza sua conta no aplicativo e grava as chaves no .env.local
  *   npm run ml:testar -- <link|MLB…> [CEP]   consulta um anúncio pela API oficial (e o frete, se passar o CEP)
+ *   npm run ml:catalogo [-- termos…]  busca rações no catálogo e gera planilhas para Produtos → Importar planilha
  * Tudo roda no seu computador; as chaves ficam só no .env.local (nunca vão para o navegador).
  */
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import path from "node:path";
 import { createInterface } from "node:readline";
 
 import { getDb } from "../src/lib/db";
 import { codeFromRedirect, parseMercadoLivreUrl, type MercadoLivreSource } from "../src/lib/integrations/adapters/mercado-livre";
 import { redact } from "../src/lib/integrations/http";
+import { IntegrationError } from "../src/lib/integrations/types";
+import { catalogRow, toCsv, type CatalogRow, type MlCatalogProduct } from "../src/lib/integrations/ml-catalog";
 import { sources } from "../src/lib/integrations";
 
 const ENV_FILE = ".env.local";
@@ -255,12 +259,107 @@ async function testar(arg: string | undefined, cep: string | undefined) {
   }
 }
 
+// Buscas que cobrem as marcas mais vendidas; o que se repete entre buscas entra uma vez só.
+const BRANDS = [
+  "Golden", "Premier", "Royal Canin", "Pedigree", "Whiskas", "Pro Plan", "Purina", "Dog Chow", "Cat Chow", "Friskies",
+  "Fórmula Natural", "N&D", "Farmina", "Guabi Natural", "Biofresh", "Hercosul", "Quatree", "Special Dog", "Special Cat",
+  "Magnus", "Premiatta", "Three Dogs", "Three Cats", "GranPlus", "Hill's", "Equilíbrio", "Origens", "Nutrilus", "Max",
+  "Baw Waw", "Foster", "Kitekat", "Sabor e Vida", "Faro", "Birbo", "Matsuda", "Adimax", "Luopet", "Prediletta",
+  "Trustydog", "Nutrive", "Monello", "Seleção Natural", "Premier Nattu", "Primocão", "Keldog", "Dogão", "Top Dog",
+];
+const TERMS = [
+  "ração cães adultos", "ração cães filhotes", "ração cães sênior", "ração cães castrados", "ração cães raças pequenas", "ração cães raças grandes",
+  "ração gatos adultos", "ração gatos filhotes", "ração gatos castrados", "ração gatos sênior",
+  ...BRANDS.flatMap((b) => [`ração ${b} cães`, `ração ${b} gatos`]),
+];
+const PER_FILE = 500;
+
+async function catalogo(terms: string[]) {
+  const src = sources(getDb()).get("mercado-livre")!;
+  if (src.status().state !== "ativa") {
+    console.log("Mercado Livre não conectado. Rode: npm run ml:conectar");
+    process.exitCode = 1;
+    return;
+  }
+  const ml = src as MercadoLivreSource;
+  const list = terms.length ? terms : TERMS;
+  const maxPages = terms.length ? 20 : 8;
+  let limit = 50;
+
+  // Páginas de catálogo que já estão no site (por ID ou no link) não entram de novo.
+  const known = new Set<string>();
+  for (const r of getDb().prepare("SELECT external_id, url FROM offers WHERE store_id = 'mercado-livre'").all() as { external_id: string | null; url: string }[]) {
+    if (r.external_id) known.add(r.external_id);
+    const m = r.url.match(/\/p\/(MLB\d+)/i);
+    if (m) known.add(m[1].toUpperCase());
+  }
+
+  const found = new Map<string, MlCatalogProduct>();
+  console.log(`\nBuscando rações no catálogo do Mercado Livre (${list.length} buscas). Leva alguns minutos…\n`);
+  for (const [n, term] of list.entries()) {
+    const before = found.size;
+    for (let page = 0; page < maxPages; page++) {
+      let data: { paging?: { total?: number }; results?: MlCatalogProduct[] };
+      try {
+        data = await ml.rawGet(`/products/search?status=active&site_id=MLB&q=${encodeURIComponent(term)}&limit=${limit}&offset=${page * limit}`);
+      } catch (e) {
+        if (e instanceof IntegrationError && e.status === 400 && limit > 10) {
+          limit = 10; // a API recusou páginas grandes: segue com páginas menores
+          page--;
+          continue;
+        }
+        if (page === 0) console.log(`   “${term}”: não respondeu (${redact(e instanceof Error ? e.message : String(e))})`);
+        break;
+      }
+      const results = Array.isArray(data.results) ? data.results : [];
+      for (const p of results) if (p.id && !found.has(p.id)) found.set(p.id, p);
+      if (results.length < limit || (page + 1) * limit >= (data.paging?.total ?? 0)) break;
+    }
+    console.log(`   [${n + 1}/${list.length}] “${term}”: ${found.size - before} novos (total ${found.size})`);
+  }
+
+  const rows: CatalogRow[] = [];
+  const skipped = new Map<string, number>();
+  let already = 0;
+  for (const p of found.values()) {
+    if (p.id && known.has(p.id)) {
+      already++;
+      continue;
+    }
+    const r = catalogRow(p);
+    if ("row" in r) rows.push(r.row);
+    else skipped.set(r.skip, (skipped.get(r.skip) ?? 0) + 1);
+  }
+  rows.sort((a, b) => a.especie.localeCompare(b.especie) || a.marca.localeCompare(b.marca, "pt-BR") || a.linha.localeCompare(b.linha, "pt-BR"));
+
+  const dir = path.join(process.cwd(), "catalogo-mercado-livre");
+  mkdirSync(dir, { recursive: true });
+  const files: string[] = [];
+  for (let i = 0; i < rows.length; i += PER_FILE) {
+    const file = path.join(dir, `parte-${files.length + 1}.csv`);
+    writeFileSync(file, toCsv(rows.slice(i, i + PER_FILE)));
+    files.push(file);
+  }
+
+  console.log(`\nProdutos encontrados: ${found.size}`);
+  console.log(`Prontos para importar: ${rows.length}`);
+  if (already) console.log(`Já estavam no site: ${already}`);
+  for (const [reason, count] of [...skipped].sort((a, b) => b[1] - a[1])) console.log(`Deixados de fora (${reason}): ${count}`);
+  if (files.length) {
+    console.log(`\nPlanilhas geradas (até ${PER_FILE} linhas cada, o máximo da importação):`);
+    for (const f of files) console.log(`   ${f}`);
+    console.log("\nAbra no Excel, apague as linhas que não quiser, cole os links de afiliado (coluna link_afiliado)");
+    console.log("se já tiver, salve e importe em Produtos → Importar planilha, uma de cada vez.\n");
+  }
+}
+
 async function main() {
   const [cmd, ...rest] = process.argv.slice(2);
   if (cmd === "conectar") await conectar();
   else if (cmd === "testar") await testar(rest[0], rest[1]);
+  else if (cmd === "catalogo") await catalogo(rest);
   else {
-    console.log("Uso: tsx scripts/mercado-livre.ts conectar | testar <link|MLB…> [CEP]");
+    console.log("Uso: tsx scripts/mercado-livre.ts conectar | testar <link|MLB…> [CEP] | catalogo [termos…]");
     process.exitCode = 1;
   }
 }

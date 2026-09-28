@@ -12,7 +12,7 @@ vi.mock("server-only", () => ({}));
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 
 describe("extração do ID do anúncio", () => {
-  it("Mercado Livre: anúncio sim, página de catálogo pede o anúncio do vendedor", () => {
+  it("Mercado Livre: anúncio do vendedor quando o link traz; senão, a página de catálogo", () => {
     expect(parseMercadoLivreUrl("https://produto.mercadolivre.com.br/MLB-1234567890-racao-golden-15kg-_JM").externalId).toBe("MLB1234567890");
     expect(parseMercadoLivreUrl("https://www.mercadolivre.com.br/racao/p/MLB19876543?wid=MLB555666777").externalId).toBe("MLB555666777");
     // link vindo do programa de afiliados: wid depois do #, e um "deal:MLB…" que não é anúncio
@@ -21,10 +21,11 @@ describe("extração do ID do anúncio", () => {
         "https://www.mercadolivre.com.br/formula-natural-fresh-meat-cao-filhote-mini-e-pequeno-cao-filhote-25kg/p/MLB22610014?pdp_filters=deal%3AMLB1578289-1&extra_comm=false#polycard_client=affiliates&wid=MLB7125580428&sid=affiliates",
       ).externalId,
     ).toBe("MLB7125580428");
-    expect(parseMercadoLivreUrl("https://www.mercadolivre.com.br/racao/p/MLB19876543?pdp_filters=deal%3AMLB1578289-1").externalId).toBeNull();
-    const cat = parseMercadoLivreUrl("https://www.mercadolivre.com.br/racao/p/MLB19876543");
-    expect(cat.externalId).toBeNull();
-    expect(cat.hint).toMatch(/catálogo/);
+    // "deal:MLB…" não é anúncio: fica o ID da página de catálogo
+    expect(parseMercadoLivreUrl("https://www.mercadolivre.com.br/racao/p/MLB19876543?pdp_filters=deal%3AMLB1578289-1").externalId).toBe("MLB19876543");
+    const cat = parseMercadoLivreUrl("https://www.mercadolivre.com.br/p/MLB19876543");
+    expect(cat.externalId).toBe("MLB19876543");
+    expect(cat.hint).toMatch(/menor preço/);
   });
 
   it("Shopee, Amazon e lojas manuais", () => {
@@ -158,6 +159,38 @@ describe("Mercado Livre: anúncio bloqueado cai para a lista do catálogo", () =
     await expect(src.fetchListing!("MLB7125580428", { url: catalogUrl })).rejects.toMatchObject({ kind: "nao_encontrado" });
     // sem link de catálogo, continua o 403 original
     await expect(src.fetchListing!("MLB7125580429")).rejects.toMatchObject({ kind: "permissao" });
+  });
+});
+
+describe("Mercado Livre: link só da página de catálogo acompanha o menor preço", () => {
+  const url = "https://www.mercadolivre.com.br/p/MLB22610014";
+  const mock = (items: unknown) =>
+    vi.fn(async (u: string | URL | Request) => {
+      const s = String(u);
+      if (s.endsWith("/products/MLB22610014")) return Response.json({ name: "Fórmula Natural Fresh Meat Cão Filhote 2,5kg", attributes: [{ id: "NET_WEIGHT", value_name: "2.5 kg" }] });
+      if (s.endsWith("/products/MLB22610014/items")) return Response.json(items);
+      return new Response("{}", { status: 404 });
+    });
+
+  it("pega o menor preço entre os vendedores, só produto novo", async () => {
+    clearIntegrationCache();
+    const fetchImpl = mock({
+      results: [
+        { item_id: "MLB1", price: 110, condition: "new", shipping: { free_shipping: false } },
+        { item_id: "MLB2", price: 90, condition: "used" },
+        { item_id: "MLB3", price: 103, condition: "new", shipping: { free_shipping: true } },
+      ],
+    });
+    const src = createMercadoLivreSource({ env: { MERCADOLIVRE_ACCESS_TOKEN: "t" }, fetchImpl: fetchImpl as unknown as typeof fetch });
+    const l = await src.fetchListing!("MLB22610014", { url });
+    expect(l).toMatchObject({ externalId: "MLB22610014", via: "catalogo_menor_preco", price: 103, freeShipping: true, availability: "disponivel", listingWeightGrams: 2500 });
+    expect(fetchImpl.mock.calls.some(([u]) => String(u).includes("/items/MLB22610014"))).toBe(false);
+  });
+
+  it("catálogo sem vendedor: indisponível e sem preço", async () => {
+    clearIntegrationCache();
+    const src = createMercadoLivreSource({ env: { MERCADOLIVRE_ACCESS_TOKEN: "t" }, fetchImpl: mock({ results: [] }) as unknown as typeof fetch });
+    expect(await src.fetchListing!("MLB22610014", { url })).toMatchObject({ price: null, availability: "indisponivel" });
   });
 });
 

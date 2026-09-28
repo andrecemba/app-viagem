@@ -48,6 +48,7 @@ interface MlProduct {
 
 interface MlCatalogOffer {
   item_id?: string;
+  condition?: string;
   price?: number | null;
   currency_id?: string;
   shipping?: { free_shipping?: boolean };
@@ -72,10 +73,11 @@ export function parseMercadoLivreUrl(url: string) {
     u.searchParams.get("wid") ?? u.searchParams.get("item_id") ?? u.searchParams.get("pdp_filters")?.match(/item_id:(MLB\d+)/i)?.[1] ?? hash.get("wid") ?? null;
   const m = (fromQuery ?? u.pathname).match(/MLB-?(\d{6,})/i);
   if (m && !(u.pathname.includes("/p/") && !fromQuery)) return { externalId: `MLB${m[1]}` };
-  if (u.pathname.includes("/p/")) {
+  const catalogId = u.pathname.includes("/p/") ? catalogIdFromUrl(u.pathname) : null;
+  if (catalogId) {
     return {
-      externalId: null,
-      hint: "Link de página de catálogo (/p/…), que junta vários vendedores. Para oferta manual pode deixar sem ID; para usar a API depois, abra o anúncio do vendedor e cole o link dele (ou digite o ID MLB).",
+      externalId: catalogId,
+      hint: "Página de catálogo (vários vendedores): pela API, o site acompanha o menor preço entre os vendedores. Para seguir um vendedor só, use o link com ?wid=MLB….",
     };
   }
   return { externalId: null, hint: "Não encontramos o ID do anúncio (MLB…). Digite-o no campo abaixo." };
@@ -138,7 +140,7 @@ export function createMercadoLivreSource(deps: MercadoLivreDeps): MercadoLivreSo
    * GET /products/{catálogo} (nome, fotos, atributos) + GET /products/{catálogo}/items
    * (ofertas ativas de cada vendedor, com preço e frete grátis). null = o anúncio não está na lista.
    */
-  async function fromCatalog(externalId: string, catalogId: string): Promise<NormalizedListing | null> {
+  async function fromCatalog(externalId: string, catalogId: string, pick: "anuncio" | "menor_preco" = "anuncio"): Promise<NormalizedListing | null> {
     const [product, offers] = await Promise.all([
       cached(`ml:product:${catalogId}`, 10 * 60_000, () => get<MlProduct>(`/products/${catalogId}`)),
       cached(`ml:product-items:${catalogId}`, 10 * 60_000, () => get<{ results?: MlCatalogOffer[] }>(`/products/${catalogId}/items`)),
@@ -146,25 +148,28 @@ export function createMercadoLivreSource(deps: MercadoLivreDeps): MercadoLivreSo
     if (!offers || typeof offers !== "object" || !Array.isArray(offers.results)) {
       throw new IntegrationError("Lista de ofertas do catálogo em formato inesperado (a API pode ter mudado).", "api_mudou");
     }
-    const hit = offers.results.find((o) => o.item_id === externalId);
-    if (!hit) return null;
-    if (hit.price != null && typeof hit.price !== "number") throw new IntegrationError("Campo de preço em formato inesperado.", "api_mudou");
+    if (offers.results.some((o) => o.price != null && typeof o.price !== "number")) throw new IntegrationError("Campo de preço em formato inesperado.", "api_mudou");
+    // Menor preço: só produto novo e com preço; a lista do catálogo traz só ofertas ativas.
+    const priced = offers.results.filter((o) => typeof o.price === "number" && o.price > 0 && (o.condition ?? "new") === "new");
+    const hit =
+      pick === "anuncio" ? offers.results.find((o) => o.item_id === externalId) : priced.reduce<MlCatalogOffer | undefined>((a, b) => (!a || b.price! < a.price! ? b : a), undefined);
+    if (pick === "anuncio" && !hit) return null;
     const attr = (id: string) => product?.attributes?.find((a) => a.id === id)?.value_name ?? null;
     return {
       externalId,
       url: null,
       title: product?.name ?? null,
-      price: typeof hit.price === "number" && hit.price > 0 ? hit.price : null,
-      currency: hit.currency_id ?? "BRL",
-      // A lista do catálogo traz só ofertas ativas: estar nela é estar à venda.
-      availability: "disponivel",
-      freeShipping: typeof hit.shipping?.free_shipping === "boolean" ? hit.shipping.free_shipping : null,
+      price: typeof hit?.price === "number" && hit.price > 0 ? hit.price : null,
+      currency: hit?.currency_id ?? "BRL",
+      // Estar na lista do catálogo é estar à venda; catálogo sem nenhuma oferta = indisponível.
+      availability: hit ? "disponivel" : "indisponivel",
+      freeShipping: typeof hit?.shipping?.free_shipping === "boolean" ? hit.shipping.free_shipping : null,
       imageUrl: product?.pictures?.[0]?.url?.replace(/^http:/, "https:") ?? null,
       listingWeightGrams: weightFromTitle(attr("NET_WEIGHT") ?? attr("WEIGHT")) ?? weightFromTitle(product?.name),
       listingFlavor: attr("FLAVOR"),
       affiliateUrl: null,
       obtainedAt: new Date().toISOString(),
-      via: "catalogo",
+      via: pick === "anuncio" ? "catalogo" : "catalogo_menor_preco",
     };
   }
 
@@ -187,6 +192,8 @@ export function createMercadoLivreSource(deps: MercadoLivreDeps): MercadoLivreSo
 
     async fetchListing(externalId: string, ctx?: { url?: string | null }): Promise<NormalizedListing> {
       if (!/^MLB\d{6,}$/.test(externalId)) throw new IntegrationError(`ID de anúncio inválido: ${externalId}`, "dados");
+      // O ID é o da própria página de catálogo (link sem ?wid=): acompanha o menor preço entre os vendedores.
+      if (catalogIdFromUrl(ctx?.url) === externalId) return (await fromCatalog(externalId, externalId, "menor_preco"))!;
       let item: MlItem;
       try {
         item = await cached(`ml:item:${externalId}`, 10 * 60_000, () => get<MlItem>(`/items/${externalId}`));
