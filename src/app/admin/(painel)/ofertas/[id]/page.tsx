@@ -151,6 +151,9 @@ export default async function OfferPage({ params, searchParams }: PageProps<"/ad
             {offer.active ? "Desativar oferta" : "Reativar oferta"}
           </button>
         </form>
+        <Link href={`/admin/produtos/${product.id}/nova-oferta?de=${offer.id}`} className={btn.ghost}>
+          Duplicar para outra loja
+        </Link>
         {offer.active && product.active && (
           <Link href={`/produto/${product.slug}#lojas`} target="_blank" className={btn.ghost}>
             Ver no site

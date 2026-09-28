@@ -7,6 +7,8 @@ import { btn, Flash, input, Tag } from "@/components/admin/ui";
 import { requireAdmin } from "@/lib/admin/auth";
 import { formatGrams } from "@/lib/catalog/vocab";
 import { getDb } from "@/lib/db";
+import { checkAffiliateLink, checkUrlText } from "@/lib/domain/listing-check";
+import { getOffer } from "@/lib/domain/offers";
 import { getProduct, productName } from "@/lib/domain/products";
 import { listStores } from "@/lib/domain/stores";
 import { divergence, hostOf, storeForUrl } from "@/lib/domain/validation";
@@ -30,6 +32,8 @@ function Field({ label, children, hint, className }: { label: string; children: 
  * Nova oferta em dois passos: 1) colar a URL do anúncio; 2) revisar os campos
  * (loja detectada pelo domínio, ID extraído quando o formato permite, dados da
  * API quando a integração está ativa) e confirmar peso e sabor.
+ * Com ?de=<oferta>, duplica outra oferta do mesmo produto: copia título, peso e
+ * sabor do anúncio; os links (página e afiliado) são sempre os da loja nova.
  */
 export default async function NewOfferPage({ params, searchParams }: PageProps<"/admin/produtos/[id]/nova-oferta">) {
   await requireAdmin();
@@ -39,7 +43,11 @@ export default async function NewOfferPage({ params, searchParams }: PageProps<"
   const product = getProduct(db, Number(id));
   if (!product) notFound();
   const stores = listStores(db, { onlyActive: true });
+  const copyFrom = getOffer(db, Number(one(sp.de)));
+  const source = copyFrom?.productId === product.id ? copyFrom : null;
+  const sourceStore = source ? stores.find((s) => s.id === source.storeId) : null;
   const url = one(sp.url)?.trim() ?? "";
+  const affiliate = one(sp.afiliado)?.trim() ?? "";
   const validUrl = url && hostOf(url) ? url : null;
   const detected = validUrl ? storeForUrl(stores, validUrl) : null;
   const store = stores.find((s) => s.id === one(sp.loja)) ?? detected;
@@ -59,6 +67,10 @@ export default async function NewOfferPage({ params, searchParams }: PageProps<"
   }
   const div = listing ? divergence(product.weightGrams, product.flavor, { listingWeightGrams: listing.listingWeightGrams, listingFlavor: listing.listingFlavor }) : null;
   const back = `/admin/produtos/${product.id}`;
+  const urlCheck = validUrl ? checkUrlText(product, validUrl) : [];
+  const affiliateCheck = validUrl && store && affiliate && hostOf(affiliate) ? await checkAffiliateLink(store, validUrl, affiliate) : null;
+  const keep = `${source ? `&de=${source.id}` : ""}${affiliate ? `&afiliado=${encodeURIComponent(affiliate)}` : ""}`;
+  const listingWeight = listing?.listingWeightGrams ?? source?.listingWeightGrams ?? null;
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
@@ -74,12 +86,24 @@ export default async function NewOfferPage({ params, searchParams }: PageProps<"
         </p>
       </div>
       <Flash aviso={one(sp.aviso)} erro={one(sp.erro)} />
+      {source && (
+        <p className="rounded-md bg-sky-50 px-3 py-2 text-sm text-sky-950 dark:bg-sky-950 dark:text-sky-100">
+          Duplicando a oferta de <strong>{sourceStore?.name ?? source.storeId}</strong>: título, peso e sabor do anúncio vêm de lá. Cole o link da página e o link de
+          afiliado da outra loja.
+        </p>
+      )}
 
       <form action={`/admin/produtos/${product.id}/nova-oferta`} className="rounded-lg border p-4">
-        <p className="text-sm font-semibold">1. Cole a URL do anúncio</p>
-        <div className="mt-2 flex flex-col gap-2 sm:flex-row">
-          <input name="url" type="url" required defaultValue={url} placeholder="https://www.loja.com.br/produto/..." className={input + " h-9"} />
-          <button type="submit" className={btn.secondary + " h-9"}>
+        <p className="text-sm font-semibold">1. Cole os links do anúncio</p>
+        {source && <input type="hidden" name="de" value={source.id} />}
+        <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
+          <Field label="Link da página do produto">
+            <input name="url" type="url" required defaultValue={url} placeholder="https://www.loja.com.br/produto/..." className={input + " h-9"} />
+          </Field>
+          <Field label="Link de afiliado (opcional)">
+            <input name="afiliado" type="url" defaultValue={affiliate} placeholder="https://amzn.to/…" className={input + " h-9"} />
+          </Field>
+          <button type="submit" className={btn.secondary + " h-9 self-end"}>
             Continuar
           </button>
         </div>
@@ -95,6 +119,30 @@ export default async function NewOfferPage({ params, searchParams }: PageProps<"
         <form action={createOfferAction} className="space-y-4 rounded-lg border p-4">
           <input type="hidden" name="productId" value={product.id} />
           <p className="text-sm font-semibold">2. Revise e confirme</p>
+
+          <div className="rounded-md border bg-muted/30 p-3 text-sm">
+            <p className="text-xs font-semibold">Conferência automática: é o mesmo produto?</p>
+            <ul className="mt-2 space-y-1">
+              {urlCheck.map((l) => (
+                <li key={l.message} className={l.ok ? "text-emerald-800 dark:text-emerald-300" : "text-amber-800 dark:text-amber-300"}>
+                  {l.ok ? "✓" : "⚠"} {l.message}
+                </li>
+              ))}
+              {affiliateCheck?.status === "mesmo" && (
+                <li className="text-emerald-800 dark:text-emerald-300">
+                  ✓ O link de afiliado leva ao mesmo anúncio da página{affiliateCheck.tag ? ` (etiqueta de afiliado: ${affiliateCheck.tag})` : ""}.
+                </li>
+              )}
+              {affiliateCheck?.status === "diferente" && (
+                <li className="font-medium text-red-800 dark:text-red-300">✗ O link de afiliado leva a OUTRO anúncio: {affiliateCheck.finalUrl}</li>
+              )}
+              {affiliateCheck?.status === "sem_conferencia" && <li className="text-amber-800 dark:text-amber-300">⚠ Link de afiliado: {affiliateCheck.reason}</li>}
+              {!affiliate && <li className="text-muted-foreground">Cole o link de afiliado no passo 1 para conferir se ele leva ao mesmo anúncio.</li>}
+            </ul>
+            <p className="mt-2 text-[0.6875rem] text-muted-foreground">
+              A conferência lê o nome que vem no endereço e segue o link de afiliado. Ela não abre a página da loja: confira o título, o peso e o sabor lá antes de salvar.
+            </p>
+          </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Loja">
@@ -127,13 +175,13 @@ export default async function NewOfferPage({ params, searchParams }: PageProps<"
               <input name="idAnuncio" defaultValue={parsed?.externalId ?? ""} className={input} />
             </Field>
             <Field label="Título do anúncio" hint="Opcional: ajuda a conferir peso e sabor.">
-              <input name="tituloAnuncio" defaultValue={listing?.title ?? ""} className={input} />
+              <input name="tituloAnuncio" defaultValue={listing?.title ?? source?.listingTitle ?? ""} className={input} />
             </Field>
           </div>
 
           {canFetch && parsed?.externalId && !listing && (
             <p className="text-sm">
-              <Link href={`?url=${encodeURIComponent(validUrl)}&loja=${store!.id}&buscar=1`} className={btn.secondary}>
+              <Link href={`?url=${encodeURIComponent(validUrl)}&loja=${store!.id}&buscar=1${keep}`} className={btn.secondary}>
                 Buscar dados do anúncio pela API
               </Link>
             </p>
@@ -165,7 +213,7 @@ export default async function NewOfferPage({ params, searchParams }: PageProps<"
               </select>
             </Field>
             <Field label="Link de afiliado" className="sm:col-span-3" hint="Gerado no painel do programa de afiliados. Nunca é montado a partir da URL.">
-              <input name="afiliado" type="url" defaultValue={listing?.affiliateUrl ?? ""} placeholder="https://" className={input} />
+              <input name="afiliado" type="url" defaultValue={affiliate || (listing?.affiliateUrl ?? "")} placeholder="https://" className={input} />
             </Field>
           </div>
 
@@ -177,7 +225,7 @@ export default async function NewOfferPage({ params, searchParams }: PageProps<"
                   <input
                     name="pesoAnuncio"
                     inputMode="decimal"
-                    defaultValue={listing?.listingWeightGrams ? String(listing.listingWeightGrams / 1000).replace(".", ",") : ""}
+                    defaultValue={listingWeight ? String(listingWeight / 1000).replace(".", ",") : ""}
                     placeholder={String(product.weightGrams / 1000).replace(".", ",")}
                     className={input}
                   />
@@ -188,7 +236,7 @@ export default async function NewOfferPage({ params, searchParams }: PageProps<"
                 </div>
               </Field>
               <Field label="Sabor no anúncio">
-                <input name="saborAnuncio" defaultValue={listing?.listingFlavor ?? ""} placeholder={product.flavor ?? ""} className={input} />
+                <input name="saborAnuncio" defaultValue={listing?.listingFlavor ?? source?.listingFlavor ?? ""} placeholder={product.flavor ?? ""} className={input} />
               </Field>
               <label className="flex items-end gap-2 pb-1.5 text-sm">
                 <input type="checkbox" name="confere" className="size-4 accent-foreground" /> Conferi: peso e sabor do anúncio são os do produto
