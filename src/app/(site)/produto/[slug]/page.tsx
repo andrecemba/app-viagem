@@ -5,6 +5,7 @@ import { ArrowUpRight, ChevronRight, HelpCircle, Stethoscope, Truck } from "luci
 
 import { BrandSwatch } from "@/components/comparator/brand-swatch";
 import { PackagePhoto } from "@/components/comparator/package-photo";
+import { PriceAlertButton } from "@/components/comparator/price-alert";
 import { PriceSignalTag } from "@/components/comparator/price-signal";
 import { TopicGrid } from "@/components/comparator/topic-icons";
 import { TrackView } from "@/components/comparator/track-view";
@@ -15,6 +16,7 @@ import { defaultItem, groupByFamily, unitPriceOf } from "@/lib/comparator/filter
 import { itemTopics, packageLabel, storeCountLabel } from "@/lib/comparator/labels";
 import type { ComparatorItem } from "@/lib/comparator/types";
 import { catalogSource, getCatalogItem } from "@/lib/data";
+import { alertSendingActive } from "@/lib/price-alerts/store";
 import { formatBRL, formatWeight } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -168,6 +170,16 @@ export default async function ProductPage({ params }: PageProps<"/produto/[slug]
       </div>
 
       <Section id="lojas" title={`Preços em ${storeCountLabel(item.offers.length)}`} subtitle="Do menor para o maior preço. Nenhuma loja paga para aparecer primeiro.">
+        <div className="mb-3 flex flex-col gap-3 rounded-lg border border-amber-300 bg-amber-50 p-3 sm:flex-row sm:items-center sm:justify-between dark:border-amber-800 dark:bg-amber-950/40">
+          <p className="text-sm">
+            <strong>Achou caro?</strong> Deixe seu e-mail e avisamos quando esta ração baixar de preço.
+          </p>
+          <PriceAlertButton
+            sendingActive={alertSendingActive()}
+            className="shrink-0"
+            product={{ id: item.id, name: [item.brand.name, fullName(item), packageLabel(item)].join(" · "), bestPrice: item.bestPrice }}
+          />
+        </div>
         {demo && (
           <p className="mb-3 rounded-md bg-warning-soft px-3 py-2 text-sm text-warning-foreground">
             Demonstração: preços ilustrativos. O botão registra o clique, mas ainda não leva a uma loja.

@@ -11,6 +11,7 @@ import { adminRepo } from "@/lib/admin/repository";
 import { buildReport, type RankRow } from "@/lib/analytics/report";
 import { hasDemoEvents, readEvents } from "@/lib/analytics/store";
 import { catalogSource } from "@/lib/data";
+import { alertSendingActive, readPriceAlerts } from "@/lib/price-alerts/store";
 import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Dados" };
@@ -55,6 +56,15 @@ export default async function DataPage({ searchParams }: PageProps<"/admin/dados
   const t = report.totals;
   const ctr = t.views ? t.clicks / t.views : null;
   const isDemo = source === "demo";
+  const alerts = (await readPriceAlerts()).filter((a) => a.at >= from.toISOString());
+  const alertsByProduct = new Map<string, { label: string; count: number; targets: number }>();
+  for (const a of alerts) {
+    const key = a.productId ?? "__geral";
+    const row = alertsByProduct.get(key) ?? { label: a.productName ?? "Ofertas do dia (qualquer ração)", count: 0, targets: 0 };
+    row.count++;
+    if (a.targetPrice != null) row.targets++;
+    alertsByProduct.set(key, row);
+  }
 
   const href = (patch: Record<string, string | undefined>) => {
     const p = new URLSearchParams();
@@ -184,6 +194,25 @@ export default async function DataPage({ searchParams }: PageProps<"/admin/dados
             </Panel>
           </div>
         </>
+      )}
+
+      {!isDemo && (
+        <Panel
+          title={`Pedidos de “Avisar oferta” · ${alerts.length}`}
+          description={
+            alertSendingActive()
+              ? "Pessoas que pediram aviso de preço. Os e-mails ficam só no servidor."
+              : "Pessoas que pediram aviso de preço. O envio dos e-mails ainda não está ligado (falta o serviço de envio, ver docs/ADMIN.md); os pedidos ficam guardados."
+          }
+        >
+          <BarList
+            valueLabel="pedidos"
+            empty="Nenhum pedido de aviso no período."
+            rows={[...alertsByProduct.entries()]
+              .sort((a, b) => b[1].count - a[1].count)
+              .map(([key, r]) => ({ key, label: r.label, value: r.count, detail: r.targets ? `${r.targets} com preço desejado` : undefined }))}
+          />
+        </Panel>
       )}
 
       <section aria-labelledby="comissao" className="rounded-lg border">

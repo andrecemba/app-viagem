@@ -92,3 +92,13 @@ localizados por busca na web em 27/09/2026; as páginas não puderam ser abertas
 bloqueados). Por isso nenhum está marcado como conferido, e GTIN, grão, descrição e foto estão vazios. Divergências
 ficam vazias e anotadas: peso do Hill's Science Diet (2,4 kg × 2,04 kg) e nome da fórmula PremieR Gatos Castrados.
 Gatos “castrados” viraram idade *adulto* + indicação *Castrados* (todas as fontes dizem “adultos castrados”).
+
+## Avisar oferta
+
+Botão âmbar “Avisar oferta” na página do produto (em cima da lista de lojas) e “Avisar ofertas no meu e-mail” no
+Top descontos. A pessoa informa o e-mail, escolhe “qualquer queda” ou um preço desejado e autoriza o envio. O pedido é
+validado no servidor e guardado em `.data/avisos.jsonl` (e-mail só no servidor; o admin vê contagens em **Dados**).
+
+**Falta conectar:** um serviço de envio de e-mail (ex.: Resend, Amazon SES) com `EMAIL_API_KEY` e `EMAIL_FROM`, uma
+rotina que compare os preços com os pedidos e envie o aviso, e o link de cancelamento em cada e-mail. Sem essas
+variáveis, a tela avisa que o envio ainda não está ligado.

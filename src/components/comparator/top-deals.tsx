@@ -6,12 +6,13 @@ import { unitPriceOf } from "@/lib/comparator/filters";
 import { formatBRL, formatWeight } from "@/lib/format";
 
 import { BrandSwatch } from "./brand-swatch";
+import { PriceAlertButton } from "./price-alert";
 
 /**
  * Painel "Top descontos do dia". No computador fica ao lado da busca (espaço que
  * estava vazio); no celular vira uma faixa com rolagem lateral, sem empurrar os filtros.
  */
-export function TopDeals({ deals, basedOnDemand }: { deals: Deal[]; basedOnDemand: boolean }) {
+export function TopDeals({ deals, basedOnDemand, sendingActive }: { deals: Deal[]; basedOnDemand: boolean; sendingActive: boolean }) {
   if (!deals.length) return null;
   return (
     <section aria-labelledby="top-descontos" className="min-w-0 lg:rounded-lg lg:border lg:bg-card lg:p-4">
@@ -54,6 +55,7 @@ export function TopDeals({ deals, basedOnDemand }: { deals: Deal[]; basedOnDeman
           );
         })}
       </ol>
+      <PriceAlertButton sendingActive={sendingActive} label="Avisar ofertas no meu e-mail" className="mt-3 w-full" />
     </section>
   );
 }

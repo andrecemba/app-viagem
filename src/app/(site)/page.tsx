@@ -1,5 +1,7 @@
 import { Comparator } from "@/components/comparator/comparator";
 import { TopDeals } from "@/components/comparator/top-deals";
+import { PetsEatingIllustration } from "@/components/illustrations/pets-eating";
+import { alertSendingActive } from "@/lib/price-alerts/store";
 import { getTopDeals } from "@/lib/analytics/top-deals";
 import { MOCK_NOW } from "@/data/mock/random";
 import { REGION_LABEL } from "@/config/comparator";
@@ -19,9 +21,15 @@ export default async function HomePage({ searchParams }: PageProps<"/">) {
         items={items}
         brands={brands}
         initial={readUrlState(params)}
-        aside={<TopDeals deals={top.deals} basedOnDemand={top.basedOnDemand} />}
+        aside={
+          <div className="space-y-4">
+            <PetsEatingIllustration className="mx-auto hidden max-w-[22rem] lg:block" />
+            <TopDeals deals={top.deals} basedOnDemand={top.basedOnDemand} sendingActive={alertSendingActive()} />
+          </div>
+        }
         intro={
           <>
+            <PetsEatingIllustration className="mb-4 max-w-[15rem] sm:max-w-[18rem] lg:hidden" />
             <p className="text-sm font-medium text-muted-foreground">Comparador de rações · {REGION_LABEL}</p>
             <h1 className="mt-3 max-w-3xl font-display text-[1.75rem] leading-[1.15] font-bold sm:text-[2.75rem] sm:leading-[1.1]">
               Encontre a ração que você já compra e compare o preço entre lojas.

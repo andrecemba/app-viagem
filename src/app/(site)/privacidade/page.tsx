@@ -10,6 +10,7 @@ export default function PrivacyPage() {
       <h2>Dados que coletamos</h2>
       <ul>
         <li><strong>Uso do site:</strong> termos buscados, filtros escolhidos, rações visitadas e cliques em “Ir à loja” (oferta, loja, preço e data/hora). Não guardamos IP, cookie nem identificação do visitante, e descartamos buscas que pareçam conter e-mail, telefone ou documento.</li>
+        <li><strong>Avisar oferta:</strong> o e-mail que você informar e a ração (e o preço desejado, se escolher), só para enviar o aviso. Não aparece no site nem é compartilhado; você pode pedir a exclusão a qualquer momento.</li>
         <li><strong>Formulário de contato:</strong> nome, e-mail e mensagem, apenas para responder você.</li>
         <li><strong>Cookies:</strong> apenas os necessários; outros só com o seu consentimento (veja a Política de Cookies).</li>
       </ul>
