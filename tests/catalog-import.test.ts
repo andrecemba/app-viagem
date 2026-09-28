@@ -139,7 +139,7 @@ describe("oferta manual passa para a API", () => {
     process.env.MERCADOLIVRE_ACCESS_TOKEN = "tok-teste";
     (globalThis as { offerSources?: unknown }).offerSources = undefined;
     clearIntegrationCache();
-    const fetchMock = vi.fn(async (_url: string | URL | Request) =>
+    const fetchMock = vi.fn<(url: string) => Promise<Response>>(async () =>
       Response.json({
         id: "MLB7125580428",
         title: "Ração Fórmula Natural Fresh Meat Filhotes Mini e Pequeno 2,5 kg",
