@@ -206,6 +206,15 @@ describe("correção manual de oferta importada", () => {
     expect(kinds).toContain("sem_afiliado");
   });
 
+  it("indisponível sem link de afiliado: só o aviso de indisponível (a loja não gera link agora)", () => {
+    const { db, o } = setup();
+    applySyncResult(db, o.id, { ...sync(199.9), price: null, availability: "indisponivel" });
+    const cur = getOffer(db, o.id)!;
+    const kinds = offerAlerts(cur, getProduct(db, cur.productId)!, getStore(db, "mercado-livre")!, getSettings(db)).map((a) => a.kind);
+    expect(kinds).toContain("indisponivel");
+    expect(kinds).not.toContain("sem_afiliado");
+  });
+
   it("peso novo diferente no anúncio manda para revisão", () => {
     const { db, o } = setup();
     applySyncResult(db, o.id, { ...sync(199.9), listingTitle: "Ração Teste Frango 10,1 kg" });

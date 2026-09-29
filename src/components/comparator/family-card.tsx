@@ -83,7 +83,7 @@ export function FamilyCard({ group }: { group: ItemGroup }) {
             {item.bestPrice == null ? (
               <>
                 <p className="text-[0.6875rem] font-medium text-muted-foreground">Menor preço</p>
-                <p className="text-sm font-medium">{item.offers.length ? "Sem preço disponível agora" : "Sem ofertas cadastradas"}</p>
+                <p className="text-sm font-medium">{!item.offers.length ? "Sem ofertas cadastradas" : item.offers.every((o) => !o.inStock) ? "Indisponível no momento" : "Sem preço disponível agora"}</p>
               </>
             ) : (
               <>

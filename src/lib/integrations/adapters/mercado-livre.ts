@@ -143,7 +143,13 @@ export function createMercadoLivreSource(deps: MercadoLivreDeps): MercadoLivreSo
   async function fromCatalog(externalId: string, catalogId: string, pick: "anuncio" | "menor_preco" = "anuncio"): Promise<NormalizedListing | null> {
     const [product, offers] = await Promise.all([
       cached(`ml:product:${catalogId}`, 10 * 60_000, () => get<MlProduct>(`/products/${catalogId}`)),
-      cached(`ml:product-items:${catalogId}`, 10 * 60_000, () => get<{ results?: MlCatalogOffer[] }>(`/products/${catalogId}/items`)),
+      cached(`ml:product-items:${catalogId}`, 10 * 60_000, () =>
+        get<{ results?: MlCatalogOffer[] }>(`/products/${catalogId}/items`).catch((e) => {
+          // Página de catálogo sem nenhum vendedor ativo: a API responde 404 na lista de ofertas.
+          if (e instanceof IntegrationError && e.kind === "nao_encontrado") return { results: [] };
+          throw e;
+        }),
+      ),
     ]);
     if (!offers || typeof offers !== "object" || !Array.isArray(offers.results)) {
       throw new IntegrationError("Lista de ofertas do catálogo em formato inesperado (a API pode ter mudado).", "api_mudou");

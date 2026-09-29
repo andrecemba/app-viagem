@@ -67,8 +67,10 @@ export function offerAlerts(offer: Offer, product: Product, store: Store, settin
     alerts.push({ kind: "preco_antigo", detail: `Preço obtido há ${h >= 48 ? `${Math.round(h / 24)} dias` : `${h} h`} (prazo: ${settings.staleHours} h).` });
   }
   if (offer.availability === "indisponivel") alerts.push({ kind: "indisponivel", detail: "O anúncio está indisponível na loja." });
-  if (!offer.affiliateUrl) alerts.push({ kind: "sem_afiliado", detail: "Sem link de afiliado: o botão leva à URL comum e não gera comissão." });
-  else {
+  // Indisponível não gera link de afiliado na loja: o aviso volta quando o produto voltar.
+  if (!offer.affiliateUrl) {
+    if (offer.availability !== "indisponivel") alerts.push({ kind: "sem_afiliado", detail: "Sem link de afiliado: o botão leva à URL comum e não gera comissão." });
+  } else {
     const host = hostOf(offer.affiliateUrl);
     if (!host || !hostMatches(host, [...store.domains, ...store.affiliateDomains])) {
       alerts.push({ kind: "afiliado_invalido", detail: `Link de afiliado fora dos domínios de ${store.name}.` });

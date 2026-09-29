@@ -192,6 +192,15 @@ describe("Mercado Livre: link só da página de catálogo acompanha o menor pre�
     const src = createMercadoLivreSource({ env: { MERCADOLIVRE_ACCESS_TOKEN: "t" }, fetchImpl: mock({ results: [] }) as unknown as typeof fetch });
     expect(await src.fetchListing!("MLB22610014", { url })).toMatchObject({ price: null, availability: "indisponivel" });
   });
+
+  it("catálogo em que a lista de ofertas responde 404: indisponível, não erro", async () => {
+    clearIntegrationCache();
+    const fetchImpl = vi.fn(async (u: string | URL | Request) =>
+      String(u).endsWith("/products/MLB22610014") ? Response.json({ name: "Fórmula Natural 2,5kg" }) : Response.json({ message: "No winners found" }, { status: 404 }),
+    );
+    const src = createMercadoLivreSource({ env: { MERCADOLIVRE_ACCESS_TOKEN: "t" }, fetchImpl: fetchImpl as unknown as typeof fetch });
+    expect(await src.fetchListing!("MLB22610014", { url })).toMatchObject({ price: null, availability: "indisponivel" });
+  });
 });
 
 describe("codeFromRedirect (npm run ml:conectar)", () => {

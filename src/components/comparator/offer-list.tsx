@@ -188,7 +188,7 @@ function OfferRow({ o, item, q, cep, isBest, staleHours }: { o: ComparatorOffer;
           </p>
         )}
         <p className="mt-0.5 text-xs text-muted-foreground">
-          {o.availability === "indisponivel" ? "Indisponível na loja" : o.availability === "desconhecida" ? "Disponibilidade não informada" : "Disponível"}
+          {o.availability === "indisponivel" ? "Indisponível no momento" : o.availability === "desconhecida" ? "Disponibilidade não informada" : "Disponível"}
         </p>
         <ShippingLine o={o} q={q} cep={cep} />
       </div>
@@ -210,7 +210,7 @@ function OfferRow({ o, item, q, cep, isBest, staleHours }: { o: ComparatorOffer;
           </>
         ) : (
           <>
-            <p className="text-sm font-medium">Preço na loja</p>
+            <p className="text-sm font-medium">{available ? "Preço na loja" : "Indisponível no momento"}</p>
             {o.priceHiddenReason && <p className="max-w-56 text-xs text-muted-foreground">{o.priceHiddenReason}</p>}
           </>
         )}

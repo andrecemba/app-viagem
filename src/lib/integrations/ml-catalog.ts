@@ -151,6 +151,8 @@ export interface LinkEntry {
   position: number;
   /** Outro sabor ou peso da ração mais vendida logo acima. */
   variant?: boolean;
+  /** Sem nenhum vendedor agora: o Mercado Livre não gera link de afiliado. */
+  unavailable?: boolean;
   name: string;
   imageUrl: string | null;
   pageUrl: string;
@@ -180,6 +182,7 @@ export function linksPage(title: string, groups: { title: string; entries: LinkE
   <div class="info">
     <b>${esc(e.name)}</b>
     ${e.note ? `<small>${esc(e.note)}</small>` : ""}
+    ${e.row && e.unavailable ? `<small class="na">Indisponível no momento: o Mercado Livre não gera link de afiliado agora. Pode deixar em branco: no site ela aparece como “Indisponível no momento” e, quando voltar ao estoque, o painel avisa “Sem link de afiliado”.</small>` : ""}
     <a href="${esc(e.pageUrl)}" target="_blank" rel="noopener">Abrir no Mercado Livre ↗</a>
     ${e.row ? `<input data-i="${idx}" placeholder="Cole aqui o link de afiliado (https://mercadolivre.com/sec/…)">` : ""}
   </div>
@@ -204,6 +207,7 @@ li.var{margin-left:2.6rem}
 img,.noimg{width:72px;height:72px;object-fit:contain;flex:none;background:#fafafa}
 .info{display:flex;flex-direction:column;gap:6px;flex:1;min-width:0}
 small{color:#a15c00}
+small.na{color:#b42318;font-weight:600}
 a{color:#2d5bd0;font-weight:600}
 input{width:100%;box-sizing:border-box;padding:8px;border:1px solid #bbb;border-radius:6px;font-size:.95rem}
 input.ok{border-color:#2a9d4b;background:#effaf2}

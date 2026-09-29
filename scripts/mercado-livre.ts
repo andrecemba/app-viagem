@@ -422,6 +422,16 @@ async function variations(ml: MercadoLivreSource, top: MlProduct, seen: Set<stri
   return [top, ...out.slice(1).sort((a, b) => (a.name ?? "").localeCompare(b.name ?? "", "pt-BR", { numeric: true }))];
 }
 
+/** Tem vendedor ativo na página de catálogo? null = não deu para saber. */
+async function hasSellers(ml: MercadoLivreSource, id: string): Promise<boolean | null> {
+  try {
+    const r = await ml.rawGet<{ results?: unknown[] }>(`/products/${id}/items`);
+    return Array.isArray(r.results) ? r.results.length > 0 : null;
+  } catch (e) {
+    return e instanceof IntegrationError && e.kind === "nao_encontrado" ? false : null;
+  }
+}
+
 async function maisVendidos(args: string[]) {
   const src = sources(getDb()).get("mercado-livre")!;
   if (src.status().state !== "ativa") {
@@ -442,6 +452,7 @@ async function maisVendidos(args: string[]) {
   const groups: { title: string; entries: LinkEntry[] }[] = [];
   const rows: CatalogRow[] = [];
   const seen = new Set<string>();
+  let unavailable = 0;
   for (const species of ["caes", "gatos"] as const) {
     const label = species === "caes" ? "Cães" : "Gatos";
     const category = await foodCategory(ml, species);
@@ -498,12 +509,16 @@ async function maisVendidos(args: string[]) {
         else if ("row" in r) {
           entry.row = r.row;
           rows.push(r.row);
+          if ((await hasSellers(ml, p.id!)) === false) {
+            entry.unavailable = true;
+            unavailable++;
+          }
         } else {
           if (i > 0) continue; // variação que não serve (úmida, kit…): nem aparece
           entry.note = `Fica de fora: ${r.skip}.`;
         }
         entries.push(entry);
-        console.log(`   ${i ? "     ↳" : `${entry.position}º`} ${entry.name}${entry.note ? `  → ${entry.note}` : ""}`);
+        console.log(`   ${i ? "     ↳" : `${entry.position}º`} ${entry.name}${entry.note ? `  → ${entry.note}` : entry.unavailable ? "  → indisponível no momento" : ""}`);
       }
       ready++;
     }
@@ -522,6 +537,7 @@ async function maisVendidos(args: string[]) {
   writeFileSync(csv, toCsv(rows));
   writeFileSync(html, linksPage("Rações mais vendidas no Mercado Livre", groups));
   console.log(`\nProntos para importar: ${rows.length}`);
+  if (unavailable) console.log(`Indisponíveis no momento (sem link de afiliado por enquanto): ${unavailable}`);
   console.log(`\nAbra esta página no navegador (dois cliques no arquivo):\n   ${html}`);
   console.log("Nela tem o link de cada ração para gerar o link de afiliado e o botão que baixa a planilha preenchida.");
   console.log(`\nA mesma planilha, sem os links de afiliado: ${csv}\n`);

@@ -149,7 +149,11 @@ export default async function ProductPage({ params }: PageProps<"/produto/[slug]
                 </a>
               </>
             ) : (
-              <p className="text-sm">{item.offers.length ? "Nenhuma loja com preço disponível agora." : "Ainda não há ofertas cadastradas para esta ração."}</p>
+              <p className="text-sm">{!item.offers.length
+                  ? "Ainda não há ofertas cadastradas para esta ração."
+                  : item.offers.every((o) => !o.inStock)
+                    ? "Indisponível no momento nas lojas acompanhadas. O preço volta a aparecer aqui assim que a ração voltar ao estoque."
+                    : "Nenhuma loja com preço disponível agora."}</p>
             )}
           </div>
 
