@@ -31,7 +31,7 @@ const SIZE_LABEL: Partial<Record<DogSize, string>> = {
   mini_pequeno: "Mini e Pequeno",
   medio_grande: "Médio e Grande",
 };
-const SIZE_WORD: Record<DogSize, string> = {
+export const SIZE_WORD: Record<DogSize, string> = {
   mini: "mini",
   pequeno: "pequeno",
   medio: "médio",
@@ -81,7 +81,7 @@ function foodTypeOf(text: string): FoodType | null {
   return null;
 }
 
-function kg(grams: number) {
+export function kg(grams: number) {
   return `${String(grams / 1000).replace(".", ",")} kg`;
 }
 

@@ -46,3 +46,4 @@ next-env.d.ts
 
 # planilhas geradas por npm run ml:catalogo
 /catalogo-mercado-livre/
+/catalogo-cobasi/

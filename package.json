@@ -20,7 +20,8 @@
     "ml:conectar": "tsx scripts/mercado-livre.ts conectar",
     "ml:testar": "tsx scripts/mercado-livre.ts testar",
     "ml:catalogo": "tsx scripts/mercado-livre.ts catalogo",
-    "ml:mais-vendidos": "tsx scripts/mercado-livre.ts mais-vendidos"
+    "ml:mais-vendidos": "tsx scripts/mercado-livre.ts mais-vendidos",
+    "cobasi:links": "tsx scripts/cobasi.ts"
   },
   "dependencies": {
     "@radix-ui/react-accordion": "^1.2.20",
