@@ -40,3 +40,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# dados locais da área administrativa
+/.data/
+
+# planilhas geradas por npm run ml:catalogo
+/catalogo-mercado-livre/
+/catalogo-cobasi/

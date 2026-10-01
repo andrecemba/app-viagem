@@ -6,7 +6,6 @@ import { Menu } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
-import { topCategories } from "@/config/site";
 
 import { institutionalNav, mainNav } from "./site-nav";
 
@@ -36,17 +35,6 @@ export function MobileMenu() {
             </Link>
           ))}
         </nav>
-        <div className="mt-4 border-t px-6 pt-4">
-          <p className="mb-2 text-xs font-bold tracking-wide text-muted-foreground uppercase">Categorias</p>
-          <ul className="space-y-2 text-sm">
-            {topCategories.map((c) => (
-              <li key={c.slug} className="flex items-center justify-between">
-                <span className={c.status === "active" ? "font-semibold" : "text-muted-foreground"}>{c.label}</span>
-                {c.status === "coming_soon" && <span className="text-xs text-muted-foreground">em breve</span>}
-              </li>
-            ))}
-          </ul>
-        </div>
         <div className="mt-4 border-t px-3 pt-4 pb-6">
           {institutionalNav.map((item) => (
             <Link

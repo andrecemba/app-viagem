@@ -1,8 +1,5 @@
 export const mainNav = [
-  { href: "/caes", label: "Cães" },
-  { href: "/gatos", label: "Gatos" },
-  { href: "/marcas", label: "Marcas" },
-  { href: "/calculadora", label: "Calculadora" },
+  { href: "/", label: "Comparar preços" },
   { href: "/sobre", label: "Como funciona" },
 ];
 

@@ -1,14 +1,13 @@
-import { FlaskConical } from "lucide-react";
+import { getDb } from "@/lib/db";
 
-import { siteConfig } from "@/config/site";
-
-export function MockDataBanner() {
-  if (!siteConfig.isMockData) return null;
+/** Aviso enquanto houver ofertas de exemplo no banco (some quando os exemplos são removidos). */
+export function DemoDataBanner() {
+  const hasDemo = Boolean(getDb().prepare("SELECT 1 FROM offers WHERE is_demo = 1 AND active = 1 LIMIT 1").get());
+  if (!hasDemo) return null;
   return (
-    <div className="bg-warning-soft text-warning-foreground">
-      <p className="mx-auto flex max-w-6xl items-center justify-center gap-2 px-4 py-1.5 text-center text-xs font-semibold">
-        <FlaskConical className="size-3.5 shrink-0" aria-hidden />
-        Dados de exemplo — preços, lojas e percentuais são fictícios.
+    <div className="border-b bg-muted">
+      <p className="page-container py-2 text-center text-xs text-muted-foreground">
+        <span className="font-semibold text-foreground">Versão de demonstração.</span> Preços marcados como “Exemplo” são fictícios e não levam a uma loja.
       </p>
     </div>
   );

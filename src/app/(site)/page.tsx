@@ -1,0 +1,66 @@
+import { Comparator } from "@/components/comparator/comparator";
+import { TopDeals } from "@/components/comparator/top-deals";
+import { PetsEatingIllustration } from "@/components/illustrations/pets-eating";
+import { getTopDeals } from "@/lib/analytics/top-deals";
+import { getCatalog, staleHours } from "@/lib/catalog/public";
+import { readUrlState } from "@/lib/comparator/filters";
+import type { ComparatorBrand } from "@/lib/comparator/types";
+import { alertSendingActive } from "@/lib/price-alerts/store";
+
+export const dynamic = "force-dynamic";
+
+export default async function HomePage({ searchParams }: PageProps<"/">) {
+  const [items, params] = await Promise.all([getCatalog(), searchParams]);
+  const brands = [...new Map<string, ComparatorBrand>(items.map((i) => [i.brand.slug, i.brand])).values()].sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+  const top = getTopDeals(items);
+  const hours = staleHours();
+
+  return (
+    <>
+      <Comparator
+        key={JSON.stringify(params)}
+        items={items}
+        brands={brands}
+        initial={readUrlState(params)}
+        aside={
+          <div className="space-y-4">
+            <PetsEatingIllustration className="mx-auto hidden max-w-[22rem] lg:block xl:max-w-[26rem]" />
+            <TopDeals deals={top.deals} basedOnDemand={top.basedOnDemand} sendingActive={alertSendingActive()} />
+          </div>
+        }
+        // "Marcas populares" e "Vistos recentemente" ficam ocultos por enquanto: para voltar,
+        // passe strip={<><PopularBrands … /><RecentlyViewed … /></>} (componentes em components/comparator).
+        intro={
+          <>
+            <PetsEatingIllustration className="mb-4 max-w-[15rem] sm:max-w-[18rem] lg:hidden" />
+            <p className="text-sm font-medium text-muted-foreground">Comparador de preços de ração</p>
+            <h1 className="mt-3 max-w-3xl font-display text-[1.75rem] leading-[1.15] font-bold sm:text-[2.75rem] sm:leading-[1.1] xl:text-[3.25rem]">
+              Encontre a ração que você já compra pelo menor preço.
+            </h1>
+            <p className="mt-4 hidden max-w-2xl text-base leading-relaxed text-muted-foreground sm:block sm:text-lg">
+              Mesma marca, sabor e peso em várias lojas, com preço por kg e o horário de cada atualização.
+            </p>
+          </>
+        }
+      />
+
+      <section aria-labelledby="como-comparamos" className="page-container mt-20 border-t pt-10">
+        <h2 id="como-comparamos" className="font-display text-lg font-semibold">
+          Como comparamos
+        </h2>
+        <dl className="mt-6 grid gap-8 text-sm sm:grid-cols-3">
+          {[
+            { title: "A mesma embalagem", text: "Marca, linha, indicação, sabor e peso idênticos. Um pacote de 3 kg nunca é comparado com um de 15 kg, nem a versão para castrados com a comum." },
+            { title: "Preço com horário", text: `Cada preço mostra quando foi consultado. Depois de ${hours} horas sem atualização, ele aparece como desatualizado.` },
+            { title: "Frete só quando cotado", text: "O preço mostrado é do produto. Frete grátis “para o seu CEP” só aparece quando uma cotação da loja confirma." },
+          ].map((b) => (
+            <div key={b.title}>
+              <dt className="font-semibold">{b.title}</dt>
+              <dd className="mt-1.5 leading-relaxed text-muted-foreground">{b.text}</dd>
+            </div>
+          ))}
+        </dl>
+      </section>
+    </>
+  );
+}

@@ -9,7 +9,19 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "admin:hash-senha": "node scripts/admin-hash-senha.mjs",
+    "db:migrate": "tsx scripts/db.ts migrate",
+    "db:reset": "tsx scripts/db.ts reset",
+    "db:sem-exemplos": "tsx scripts/db.ts sem-exemplos",
+    "precos:atualizar": "tsx scripts/db.ts sync",
+    "configurar": "node scripts/configurar.mjs",
+    "db:zerar": "tsx scripts/db.ts zerar",
+    "ml:conectar": "tsx scripts/mercado-livre.ts conectar",
+    "ml:testar": "tsx scripts/mercado-livre.ts testar",
+    "ml:catalogo": "tsx scripts/mercado-livre.ts catalogo",
+    "ml:mais-vendidos": "tsx scripts/mercado-livre.ts mais-vendidos",
+    "cobasi:links": "tsx scripts/cobasi.ts"
   },
   "dependencies": {
     "@radix-ui/react-accordion": "^1.2.20",
@@ -34,7 +46,11 @@
     "eslint": "^9",
     "eslint-config-next": "16.3.6",
     "tailwindcss": "^4",
+    "tsx": "^4.23.15",
     "typescript": "^5",
     "vitest": "^5.0.2"
+  },
+  "engines": {
+    "node": ">=22.13"
   }
 }
