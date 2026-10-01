@@ -1,26 +1,17 @@
 import { Comparator } from "@/components/comparator/comparator";
-import { PopularBrands } from "@/components/comparator/popular-brands";
-import { RecentlyViewed } from "@/components/comparator/recently-viewed";
 import { TopDeals } from "@/components/comparator/top-deals";
 import { PetsEatingIllustration } from "@/components/illustrations/pets-eating";
 import { getTopDeals } from "@/lib/analytics/top-deals";
 import { getCatalog, staleHours } from "@/lib/catalog/public";
 import { readUrlState } from "@/lib/comparator/filters";
 import type { ComparatorBrand } from "@/lib/comparator/types";
-import { formatWeight } from "@/lib/format";
 import { alertSendingActive } from "@/lib/price-alerts/store";
 
 export const dynamic = "force-dynamic";
 
 export default async function HomePage({ searchParams }: PageProps<"/">) {
   const [items, params] = await Promise.all([getCatalog(), searchParams]);
-  const counts = new Map<string, number>();
-  for (const i of items) counts.set(i.brand.slug, (counts.get(i.brand.slug) ?? 0) + 1);
   const brands = [...new Map<string, ComparatorBrand>(items.map((i) => [i.brand.slug, i.brand])).values()].sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
-  const popular = [...brands]
-    .map((b) => ({ ...b, count: counts.get(b.slug) ?? 0 }))
-    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, "pt-BR"))
-    .slice(0, 10);
   const top = getTopDeals(items);
   const hours = staleHours();
 
@@ -37,14 +28,8 @@ export default async function HomePage({ searchParams }: PageProps<"/">) {
             <TopDeals deals={top.deals} basedOnDemand={top.basedOnDemand} sendingActive={alertSendingActive()} />
           </div>
         }
-        strip={
-          <>
-            <PopularBrands brands={popular} />
-            <RecentlyViewed
-              candidates={items.map((i) => ({ slug: i.slug, name: [i.title, i.flavor].filter(Boolean).join(" · "), weight: formatWeight(i.netWeightGrams), price: i.bestPrice }))}
-            />
-          </>
-        }
+        // "Marcas populares" e "Vistos recentemente" ficam ocultos por enquanto: para voltar,
+        // passe strip={<><PopularBrands … /><RecentlyViewed … /></>} (componentes em components/comparator).
         intro={
           <>
             <PetsEatingIllustration className="mb-4 max-w-[15rem] sm:max-w-[18rem] lg:hidden" />
