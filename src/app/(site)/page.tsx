@@ -33,7 +33,7 @@ export default async function HomePage({ searchParams }: PageProps<"/">) {
         initial={readUrlState(params)}
         aside={
           <div className="space-y-4">
-            <PetsEatingIllustration className="mx-auto hidden max-w-[22rem] lg:block" />
+            <PetsEatingIllustration className="mx-auto hidden max-w-[22rem] lg:block xl:max-w-[26rem]" />
             <TopDeals deals={top.deals} basedOnDemand={top.basedOnDemand} sendingActive={alertSendingActive()} />
           </div>
         }
@@ -49,7 +49,7 @@ export default async function HomePage({ searchParams }: PageProps<"/">) {
           <>
             <PetsEatingIllustration className="mb-4 max-w-[15rem] sm:max-w-[18rem] lg:hidden" />
             <p className="text-sm font-medium text-muted-foreground">Comparador de preços de ração</p>
-            <h1 className="mt-3 max-w-3xl font-display text-[1.75rem] leading-[1.15] font-bold sm:text-[2.75rem] sm:leading-[1.1]">
+            <h1 className="mt-3 max-w-3xl font-display text-[1.75rem] leading-[1.15] font-bold sm:text-[2.75rem] sm:leading-[1.1] xl:text-[3.25rem]">
               Encontre a ração que você já compra pelo menor preço.
             </h1>
             <p className="mt-4 hidden max-w-2xl text-base leading-relaxed text-muted-foreground sm:block sm:text-lg">
@@ -59,7 +59,7 @@ export default async function HomePage({ searchParams }: PageProps<"/">) {
         }
       />
 
-      <section aria-labelledby="como-comparamos" className="mx-auto mt-20 max-w-6xl border-t px-4 pt-10">
+      <section aria-labelledby="como-comparamos" className="page-container mt-20 border-t pt-10">
         <h2 id="como-comparamos" className="font-display text-lg font-semibold">
           Como comparamos
         </h2>

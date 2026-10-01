@@ -162,3 +162,21 @@
 .prose-content a {
   @apply font-semibold text-primary underline-offset-4 hover:underline;
 }
+
+/* Largura das páginas do site: acompanha a tela (com margem lateral que cresce junto)
+   até 1600px; acima disso o conteúdo fica centralizado para as linhas não ficarem longas demais. */
+@utility page-container {
+  margin-inline: auto;
+  width: 100%;
+  max-width: 1600px;
+  padding-inline: 1rem;
+  @media (width >= 40rem) {
+    padding-inline: 1.5rem;
+  }
+  @media (width >= 64rem) {
+    padding-inline: 2rem;
+  }
+  @media (width >= 96rem) {
+    padding-inline: 3rem;
+  }
+}

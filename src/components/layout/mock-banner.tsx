@@ -6,7 +6,7 @@ export function DemoDataBanner() {
   if (!hasDemo) return null;
   return (
     <div className="border-b bg-muted">
-      <p className="mx-auto max-w-6xl px-4 py-2 text-center text-xs text-muted-foreground">
+      <p className="page-container py-2 text-center text-xs text-muted-foreground">
         <span className="font-semibold text-foreground">Versão de demonstração.</span> Preços marcados como “Exemplo” são fictícios e não levam a uma loja.
       </p>
     </div>

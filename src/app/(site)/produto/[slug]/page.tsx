@@ -78,7 +78,7 @@ export default async function ProductPage({ params }: PageProps<"/produto/[slug]
   };
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-6">
+    <div className="page-container py-6">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, "\\u003c") }} />
       <TrackView id={item.id} slug={item.slug} />
       <nav aria-label="Trilha" className="mb-6 flex flex-wrap items-center gap-1 text-sm text-muted-foreground">
@@ -95,7 +95,7 @@ export default async function ProductPage({ params }: PageProps<"/produto/[slug]
         </Link>
       </nav>
 
-      <div className="grid gap-6 md:grid-cols-[minmax(0,320px)_1fr] lg:grid-cols-[440px_minmax(0,1fr)_300px] lg:gap-8">
+      <div className="grid gap-6 md:grid-cols-[minmax(0,320px)_1fr] lg:grid-cols-[400px_minmax(0,1fr)_300px] lg:gap-8 xl:grid-cols-[460px_minmax(0,1fr)_340px] 2xl:grid-cols-[520px_minmax(0,1fr)_360px] 2xl:gap-10">
         <div className="md:row-span-2 lg:row-span-1">
           <PackagePhoto item={item} className="mx-auto aspect-square w-full max-w-[22rem] md:max-w-none" />
         </div>
@@ -229,7 +229,7 @@ export default async function ProductPage({ params }: PageProps<"/produto/[slug]
 
 function OtherGrid({ items, all }: { items: ComparatorItem[]; all: ComparatorItem[] }) {
   return (
-    <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+    <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
       {items.map((i) => {
         const weights = all.filter((x) => x.family === i.family).map((x) => formatWeight(x.netWeightGrams));
         const u = unitPriceOf(i);

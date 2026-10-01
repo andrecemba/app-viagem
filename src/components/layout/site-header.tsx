@@ -8,7 +8,7 @@ import { ThemeToggle } from "./theme-toggle";
 export function SiteHeader() {
   return (
     <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur">
-      <div className="mx-auto flex h-14 max-w-6xl items-center gap-2 px-4">
+      <div className="page-container flex h-14 items-center gap-2">
         <MobileMenu />
         <SiteLogo />
         <nav className="ml-auto hidden items-center gap-1 md:flex" aria-label="Principal">

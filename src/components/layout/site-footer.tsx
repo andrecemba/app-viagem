@@ -9,7 +9,7 @@ import { SiteLogo } from "./site-logo";
 export function SiteFooter() {
   return (
     <footer className="mt-20 border-t bg-muted/40">
-      <div className="mx-auto max-w-6xl px-4 py-12">
+      <div className="page-container py-12">
         <p className="mb-10 flex gap-2.5 border-b pb-8 text-sm text-muted-foreground">
           <Info className="mt-0.5 size-4 shrink-0" aria-hidden />
           {siteConfig.affiliateDisclaimer}

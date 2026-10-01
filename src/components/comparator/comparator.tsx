@@ -203,7 +203,7 @@ export function Comparator({
   return (
     <>
       <section className="border-b">
-        <div className="mx-auto max-w-6xl px-4 pt-10 pb-8 sm:pt-12 sm:pb-9 lg:grid lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start lg:gap-10">
+        <div className="page-container pt-10 pb-8 sm:pt-12 sm:pb-9 lg:grid lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start lg:gap-10 xl:grid-cols-[minmax(0,1fr)_26rem] xl:gap-16">
           <div className="min-w-0">
             {intro}
             <div className="mt-7 max-w-3xl">
@@ -296,9 +296,9 @@ export function Comparator({
         </div>
       </section>
 
-      {strip && <div className="mx-auto max-w-6xl space-y-5 border-b px-4 py-5">{strip}</div>}
+      {strip && <div className="page-container space-y-5 border-b py-5">{strip}</div>}
 
-      <div className="mx-auto grid max-w-6xl gap-8 px-4 lg:grid-cols-[17rem_1fr]">
+      <div className="page-container grid gap-8 lg:grid-cols-[17rem_minmax(0,1fr)] 2xl:grid-cols-[18rem_minmax(0,1fr)] 2xl:gap-10">
         <aside aria-label="Filtros" className="hidden lg:block">
           <div className="sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto pt-6 pr-2 pb-10">
             <div className="flex items-baseline justify-between pb-2">
@@ -374,7 +374,7 @@ export function Comparator({
           />
 
           {groups.length > 0 ? (
-            <ul className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            <ul className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
               {visible.map((g) => (
                 <li key={g.family}>
                   <FamilyCard group={g} />
